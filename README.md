@@ -1,4 +1,4 @@
-# TRANSFER V3.2 — P2P TEXT + AUTO UPDATE
+# TRANSFER V3.3 — P2P TEXT + AUTO UPDATE + NATIVE WINDOW CHROME
 
 Base independiente de TRANSFER.
 
@@ -44,3 +44,13 @@ Base independiente de TRANSFER.
 - El Service Worker usa red primero para HTML/JS/CSS/manifest/version y conserva caché como respaldo offline.
 - Una actualización no borra `localStorage`: se mantienen ID, PIN, tokens de vinculación, dispositivos, tema, interfaz e historial local.
 - No es necesario reinstalar la PWA después de cada versión.
+
+
+## V3.3 — controles nativos de ventana
+
+- Se eliminan de la interfaz los botones simulados de cerrar, minimizar y maximizar en Mac y Windows.
+- La PWA instalada usa exclusivamente los controles reales que proporciona macOS o Windows.
+- Se elimina el espacio reservado de 36 px del encabezado falso para recuperar área útil.
+- La barra lateral de escritorio comienza debajo del marco real de la ventana y ocupa toda el área disponible.
+- iPhone y Android no cambian.
+- Se conserva la actualización automática de V3.2 y todos los datos locales.

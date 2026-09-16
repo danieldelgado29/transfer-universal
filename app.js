@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.3.0';
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
 const icons = {Mac:'▱',iPhone:'▯',Android:'♟',Windows:'⊞'};
 

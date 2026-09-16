@@ -1,4 +1,4 @@
-const CACHE='transfer-pwa-v3-2-autoupdate';
+const CACHE='transfer-pwa-v3-3-native-window-chrome';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./version.json','./icons/icon-192.png','./icons/icon-512.png'];
 
 async function putFresh(cache,url){
@@ -22,8 +22,8 @@ self.addEventListener('activate',event=>{
     await Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)));
     await self.clients.claim();
 
-    // Importante para la transición desde V3.1: aunque la versión vieja todavía
-    // esté abierta, al activarse este worker navegamos las ventanas de TRANSFER
+    // Mantiene actualización automática entre versiones: aunque la versión vieja todavía
+    // al activarse este worker navegamos las ventanas de TRANSFER
     // una sola vez para que carguen el shell nuevo. No borra datos locales.
     const windows=await self.clients.matchAll({type:'window',includeUncontrolled:true});
     await Promise.all(windows.map(client=>{
