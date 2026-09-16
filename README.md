@@ -1,4 +1,4 @@
-# TRANSFER V3.3 — P2P TEXT + AUTO UPDATE + NATIVE WINDOW CHROME
+# TRANSFER V3.4 — P2P TEXT + AUTO UPDATE + CLIPBOARD REFRESH
 
 Base independiente de TRANSFER.
 
@@ -54,3 +54,14 @@ Base independiente de TRANSFER.
 - La barra lateral de escritorio comienza debajo del marco real de la ventana y ocupa toda el área disponible.
 - iPhone y Android no cambian.
 - Se conserva la actualización automática de V3.2 y todos los datos locales.
+
+
+## V3.4 — portapapeles en escritorio
+
+- En Mac y Windows, al volver a TRANSFER se intenta leer el portapapeles nuevo automáticamente.
+- Tras una lectura autorizada, mientras TRANSFER está visible comprueba cambios cada 1,5 s.
+- Un texto nuevo detectado actualiza la tarjeta Portapapeles y se sincroniza con los dispositivos P2P conectados.
+- El botón Pegar sigue disponible como autorización/respaldo cuando el navegador restringe la lectura automática.
+- iPhone y Android mantienen el flujo manual de portapapeles dentro de la PWA por restricciones del sistema/navegador.
+- Se corrige el indicador “Sin red P2P” falso cuando simplemente un dispositivo remoto no está disponible.
+- No se borran vinculaciones, tokens, tema, historial ni preferencias.

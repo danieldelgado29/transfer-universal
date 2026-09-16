@@ -1,4 +1,4 @@
-const CACHE='transfer-pwa-v3-3-native-window-chrome';
+const CACHE='transfer-pwa-v3-4-clipboard-refresh';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./version.json','./icons/icon-192.png','./icons/icon-512.png'];
 
 async function putFresh(cache,url){

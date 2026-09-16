@@ -5,8 +5,9 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.3.0';
+const APP_VERSION = '3.4.0';
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
+const CLIPBOARD_POLL_MS = 1500;
 const icons = {Mac:'▱',iPhone:'▯',Android:'♟',Windows:'⊞'};
 
 function escapeHtml(s=''){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -46,6 +47,10 @@ devices = devices.filter(d=>d.peerId && d.peerId!==selfDevice.peerId).map(d=>({.
 
 let recents = loadJSON('transfer.recents', []);
 let clipboardText = localStorage.getItem('transfer.clipboard') || '';
+let clipboardAutoReadCapable = localStorage.getItem('transfer.clipboardAutoRead') === '1';
+let clipboardReadBusy = false;
+let lastObservedSystemClipboard = '';
+let lastClipboardSyncSent = '';
 let deferredPrompt = null;
 let peer = null;
 let peerReady = false;
@@ -66,7 +71,7 @@ function setNetworkBadge(state,text){
   ['#desktopNetworkBadge','#mobileNetworkBadge'].forEach(sel=>{const e=$(sel);if(!e)return;e.dataset.state=state;const sp=e.querySelector('span');if(sp)sp.textContent=text});
 }
 function updateNetworkBadge(){
-  if(networkError){setNetworkBadge('error','Sin red P2P');return}
+  if(networkError && !peerReady){setNetworkBadge('error','Sin red P2P');return}
   if(!peerReady){setNetworkBadge('connecting','Conectando…');return}
   const n=devices.filter(d=>d.online).length;
   setNetworkBadge(n?'online':'ready',n?`${n} conectado${n===1?'':'s'}`:'P2P listo');
@@ -116,11 +121,85 @@ function renderDevices(){
 }
 function renderRecents(){const rr=recentRows();['#mobileRecentList','#desktopRecentList'].forEach(sel=>{const e=$(sel);if(e)e.innerHTML=rr})}
 function updateClipboardUI(){
-  const preview=clipboardText||'Toca “Pegar” para leer tu portapapeles.';
+  const preview=clipboardText||'Toca “Pegar” una vez para autorizar el portapapeles.';
   if($('#clipboardPreview'))$('#clipboardPreview').textContent=preview;
   if($('#desktopClipboardPreview'))$('#desktopClipboardPreview').textContent=preview;
   if($('#clipboardTitle'))$('#clipboardTitle').textContent=clipboardText?'Texto sincronizado listo para pegar':'Texto listo para compartir';
-  if($('#clipboardMeta'))$('#clipboardMeta').textContent=clipboardText?'Guardado en TRANSFER':'Sin texto sincronizado';
+  if($('#clipboardMeta')){
+    const desktop=['mac','windows'].includes(detectPlatform());
+    $('#clipboardMeta').textContent=clipboardText?(desktop&&clipboardAutoReadCapable?'Actualización automática activa':'Guardado en TRANSFER'):'Sin texto sincronizado';
+  }
+}
+
+function clipboardTitle(text){return text.length>48?text.slice(0,48)+'…':text}
+
+function broadcastClipboardText(text){
+  if(!text || text===lastClipboardSyncSent)return 0;
+  const peers=devices.filter(d=>d.online).map(d=>d.peerId);
+  if(!peers.length)return 0;
+  const msgId=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
+  let sent=0;
+  peers.forEach(peerId=>{
+    const conn=connections.get(peerId);
+    if(conn?.open){
+      try{conn.send({type:'text',protocol:APP_PROTOCOL,id:msgId,text,sentAt:Date.now(),device:selfInfo(),source:'clipboard'});sent++}catch{}
+    }
+  });
+  if(sent){
+    lastClipboardSyncSent=text;
+    pendingAcks.set(msgId,{expected:sent,ok:new Set(),at:Date.now()});
+  }
+  return sent;
+}
+
+function acceptSystemClipboardText(text,{announce=false}={}){
+  text=String(text||'');
+  if(!text)return false;
+  lastObservedSystemClipboard=text;
+  if(text===clipboardText)return false;
+  clipboardText=text;save();updateClipboardUI();
+  const sent=broadcastClipboardText(text);
+  addRecent(clipboardTitle(text),sent?`Portapapeles sincronizado con ${sent} dispositivo${sent===1?'':'s'} · ${nowLabel()}`:`Portapapeles actualizado · ${nowLabel()}`,'≡');
+  if(announce)toast(sent?`Portapapeles actualizado y enviado a ${sent} dispositivo${sent===1?'':'s'}`:'Portapapeles actualizado');
+  return true;
+}
+
+async function clipboardPermissionGranted(){
+  if(clipboardAutoReadCapable)return true;
+  try{
+    if(!navigator.permissions?.query)return false;
+    const status=await navigator.permissions.query({name:'clipboard-read'});
+    if(status.state==='granted'){
+      clipboardAutoReadCapable=true;
+      localStorage.setItem('transfer.clipboardAutoRead','1');
+      updateClipboardUI();
+      return true;
+    }
+  }catch{}
+  return false;
+}
+
+async function refreshClipboardFromSystem({manual=false,announce=false}={}){
+  if(clipboardReadBusy || !navigator.clipboard?.readText)return false;
+  if(document.visibilityState!=='visible' || !document.hasFocus())return false;
+  if(!manual && !['mac','windows'].includes(detectPlatform()))return false;
+  if(!manual && !(await clipboardPermissionGranted()))return false;
+  clipboardReadBusy=true;
+  try{
+    const text=await navigator.clipboard.readText();
+    clipboardAutoReadCapable=true;
+    localStorage.setItem('transfer.clipboardAutoRead','1');
+    updateClipboardUI();
+    if(text===lastObservedSystemClipboard)return false;
+    return acceptSystemClipboardText(text,{announce});
+  }catch(err){
+    if(manual)toast('Autoriza el portapapeles o pega manualmente');
+    return false;
+  }finally{clipboardReadBusy=false}
+}
+
+function scheduleClipboardRefresh(delay=120){
+  setTimeout(()=>refreshClipboardFromSystem({manual:false,announce:false}),delay);
 }
 function render(){renderDevices();renderRecents();updateClipboardUI();renderPairDialog()}
 
@@ -218,6 +297,7 @@ function initPeer(){
       if(err?.type==='unavailable-id'){
         selfDevice.peerId=PEER_ID_PREFIX+randomChars(12);save();try{peer.destroy()}catch{};peer=null;setTimeout(initPeer,300);return;
       }
+      if(err?.type==='peer-unavailable'){networkError='';updateNetworkBadge();return}
       networkError=err?.type||'error';updateNetworkBadge();
     });
   }catch(err){networkError=String(err);updateNetworkBadge()}
@@ -255,8 +335,8 @@ $('#sendForm').addEventListener('submit',e=>{
   $('#sendDialog').close();toast(`Texto enviado a ${sent} dispositivo${sent===1?'':'s'} ✓`);
 });
 
-const copyBtn=$('#copyBtn');if(copyBtn)copyBtn.onclick=async()=>{const text=clipboardText||$('#clipboardPreview')?.textContent||'';if(!text)return toast('No hay texto para copiar');try{await navigator.clipboard.writeText(text);toast('Copiado al portapapeles')}catch{toast('El navegador no permitió copiar')}};
-const pasteBtn=$('#pasteBtn');if(pasteBtn)pasteBtn.onclick=async()=>{try{const text=await navigator.clipboard.readText();if(!text){toast('El portapapeles está vacío');return}clipboardText=text;save();updateClipboardUI();toast('Texto cargado en TRANSFER')}catch{toast('Autoriza el portapapeles o pega manualmente')}};
+const copyBtn=$('#copyBtn');if(copyBtn)copyBtn.onclick=async()=>{const text=clipboardText||$('#clipboardPreview')?.textContent||'';if(!text)return toast('No hay texto para copiar');try{await navigator.clipboard.writeText(text);lastObservedSystemClipboard=text;toast('Copiado al portapapeles')}catch{toast('El navegador no permitió copiar')}};
+const pasteBtn=$('#pasteBtn');if(pasteBtn)pasteBtn.onclick=async()=>{const ok=await refreshClipboardFromSystem({manual:true,announce:true});if(!ok && !clipboardText)toast('El portapapeles está vacío o no cambió')};
 
 function clearRecents(){recents=[];save();renderRecents();toast('Actividad reciente eliminada')}
 ['#mobileClearRecentBtn','#desktopClearRecentBtn'].forEach(sel=>{const e=$(sel);if(e)e.onclick=clearRecents});
@@ -323,13 +403,24 @@ $$('[data-tab]').forEach(b=>b.onclick=()=>{
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e});
 $('#installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else toast('Usa “Añadir a pantalla de inicio” del navegador')};
 
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(peer && peer.disconnected){try{peer.reconnect()}catch{}}reconnectAll()}});
-window.addEventListener('online',()=>{networkError='';if(peer?.disconnected){try{peer.reconnect()}catch{}}reconnectAll()});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(peer && peer.disconnected){try{peer.reconnect()}catch{}}reconnectAll();scheduleClipboardRefresh(180)}});
+window.addEventListener('focus',()=>scheduleClipboardRefresh(120));
+window.addEventListener('pageshow',()=>scheduleClipboardRefresh(220));
+window.addEventListener('online',()=>{networkError='';if(peer?.disconnected){try{peer.reconnect()}catch{}}reconnectAll();scheduleClipboardRefresh(250)});
 window.addEventListener('offline',()=>{devices.forEach(d=>d.online=false);renderDevices();setNetworkBadge('error','Sin Internet')});
 setInterval(()=>{
   if(!peerReady)return;
   devices.forEach(d=>{const c=connections.get(d.peerId);if(c?.open){try{c.send({type:'ping',protocol:APP_PROTOCOL,t:Date.now()})}catch{markOnline(d.peerId,false)}}else connectDevice(d)});
 },RECONNECT_MS);
+
+// V3.4 — mientras TRANSFER está visible en escritorio, comprueba si el
+// portapapeles cambió. Los navegadores que no conceden lectura persistente
+// simplemente ignoran estos intentos; el botón Pegar sigue siendo el respaldo.
+setInterval(()=>{
+  if(document.visibilityState==='visible' && document.hasFocus() && clipboardAutoReadCapable){
+    refreshClipboardFromSystem({manual:false,announce:false});
+  }
+},CLIPBOARD_POLL_MS);
 
 render();
 initPeer();
