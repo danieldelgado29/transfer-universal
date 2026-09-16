@@ -1,4 +1,4 @@
-# TRANSFER V3.4 — P2P TEXT + AUTO UPDATE + CLIPBOARD REFRESH
+# TRANSFER V3.5 — P2P TEXT + AUTO UPDATE + NATIVE WINDOW CHROME
 
 Base independiente de TRANSFER.
 
@@ -56,12 +56,12 @@ Base independiente de TRANSFER.
 - Se conserva la actualización automática de V3.2 y todos los datos locales.
 
 
-## V3.4 — portapapeles en escritorio
+## V3.5 — Bridge Mac
 
-- En Mac y Windows, al volver a TRANSFER se intenta leer el portapapeles nuevo automáticamente.
-- Tras una lectura autorizada, mientras TRANSFER está visible comprueba cambios cada 1,5 s.
-- Un texto nuevo detectado actualiza la tarjeta Portapapeles y se sincroniza con los dispositivos P2P conectados.
-- El botón Pegar sigue disponible como autorización/respaldo cuando el navegador restringe la lectura automática.
-- iPhone y Android mantienen el flujo manual de portapapeles dentro de la PWA por restricciones del sistema/navegador.
-- Se corrige el indicador “Sin red P2P” falso cuando simplemente un dispositivo remoto no está disponible.
-- No se borran vinculaciones, tokens, tema, historial ni preferencias.
+- Añade integración con el helper local `TRANSFER Mac Bridge` en `127.0.0.1:8765`.
+- El helper vigila el portapapeles real de macOS continuamente.
+- TRANSFER detecta el último texto sin depender del permiso Clipboard API del navegador.
+- Cuando un texto llega por P2P a la Mac, TRANSFER lo escribe al portapapeles del sistema a través del bridge.
+- Los textos detectados en Mac se envían automáticamente a Android/Windows que estén conectados.
+- Se mantiene el botón Pegar en escritorio como respaldo manual.
+- El bridge guarda el último texto aunque la PWA esté cerrada; la sincronización P2P automática aún requiere TRANSFER abierta en esta etapa.

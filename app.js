@@ -5,9 +5,10 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.4.0';
+const APP_VERSION = '3.5.0';
+const MAC_BRIDGE_URL = 'http://127.0.0.1:8765';
+const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
-const CLIPBOARD_POLL_MS = 1500;
 const icons = {Mac:'▱',iPhone:'▯',Android:'♟',Windows:'⊞'};
 
 function escapeHtml(s=''){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -47,10 +48,6 @@ devices = devices.filter(d=>d.peerId && d.peerId!==selfDevice.peerId).map(d=>({.
 
 let recents = loadJSON('transfer.recents', []);
 let clipboardText = localStorage.getItem('transfer.clipboard') || '';
-let clipboardAutoReadCapable = localStorage.getItem('transfer.clipboardAutoRead') === '1';
-let clipboardReadBusy = false;
-let lastObservedSystemClipboard = '';
-let lastClipboardSyncSent = '';
 let deferredPrompt = null;
 let peer = null;
 let peerReady = false;
@@ -71,7 +68,7 @@ function setNetworkBadge(state,text){
   ['#desktopNetworkBadge','#mobileNetworkBadge'].forEach(sel=>{const e=$(sel);if(!e)return;e.dataset.state=state;const sp=e.querySelector('span');if(sp)sp.textContent=text});
 }
 function updateNetworkBadge(){
-  if(networkError && !peerReady){setNetworkBadge('error','Sin red P2P');return}
+  if(networkError){setNetworkBadge('error','Sin red P2P');return}
   if(!peerReady){setNetworkBadge('connecting','Conectando…');return}
   const n=devices.filter(d=>d.online).length;
   setNetworkBadge(n?'online':'ready',n?`${n} conectado${n===1?'':'s'}`:'P2P listo');
@@ -121,85 +118,11 @@ function renderDevices(){
 }
 function renderRecents(){const rr=recentRows();['#mobileRecentList','#desktopRecentList'].forEach(sel=>{const e=$(sel);if(e)e.innerHTML=rr})}
 function updateClipboardUI(){
-  const preview=clipboardText||'Toca “Pegar” una vez para autorizar el portapapeles.';
+  const preview=clipboardText||'Toca “Pegar” para leer tu portapapeles.';
   if($('#clipboardPreview'))$('#clipboardPreview').textContent=preview;
   if($('#desktopClipboardPreview'))$('#desktopClipboardPreview').textContent=preview;
   if($('#clipboardTitle'))$('#clipboardTitle').textContent=clipboardText?'Texto sincronizado listo para pegar':'Texto listo para compartir';
-  if($('#clipboardMeta')){
-    const desktop=['mac','windows'].includes(detectPlatform());
-    $('#clipboardMeta').textContent=clipboardText?(desktop&&clipboardAutoReadCapable?'Actualización automática activa':'Guardado en TRANSFER'):'Sin texto sincronizado';
-  }
-}
-
-function clipboardTitle(text){return text.length>48?text.slice(0,48)+'…':text}
-
-function broadcastClipboardText(text){
-  if(!text || text===lastClipboardSyncSent)return 0;
-  const peers=devices.filter(d=>d.online).map(d=>d.peerId);
-  if(!peers.length)return 0;
-  const msgId=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
-  let sent=0;
-  peers.forEach(peerId=>{
-    const conn=connections.get(peerId);
-    if(conn?.open){
-      try{conn.send({type:'text',protocol:APP_PROTOCOL,id:msgId,text,sentAt:Date.now(),device:selfInfo(),source:'clipboard'});sent++}catch{}
-    }
-  });
-  if(sent){
-    lastClipboardSyncSent=text;
-    pendingAcks.set(msgId,{expected:sent,ok:new Set(),at:Date.now()});
-  }
-  return sent;
-}
-
-function acceptSystemClipboardText(text,{announce=false}={}){
-  text=String(text||'');
-  if(!text)return false;
-  lastObservedSystemClipboard=text;
-  if(text===clipboardText)return false;
-  clipboardText=text;save();updateClipboardUI();
-  const sent=broadcastClipboardText(text);
-  addRecent(clipboardTitle(text),sent?`Portapapeles sincronizado con ${sent} dispositivo${sent===1?'':'s'} · ${nowLabel()}`:`Portapapeles actualizado · ${nowLabel()}`,'≡');
-  if(announce)toast(sent?`Portapapeles actualizado y enviado a ${sent} dispositivo${sent===1?'':'s'}`:'Portapapeles actualizado');
-  return true;
-}
-
-async function clipboardPermissionGranted(){
-  if(clipboardAutoReadCapable)return true;
-  try{
-    if(!navigator.permissions?.query)return false;
-    const status=await navigator.permissions.query({name:'clipboard-read'});
-    if(status.state==='granted'){
-      clipboardAutoReadCapable=true;
-      localStorage.setItem('transfer.clipboardAutoRead','1');
-      updateClipboardUI();
-      return true;
-    }
-  }catch{}
-  return false;
-}
-
-async function refreshClipboardFromSystem({manual=false,announce=false}={}){
-  if(clipboardReadBusy || !navigator.clipboard?.readText)return false;
-  if(document.visibilityState!=='visible' || !document.hasFocus())return false;
-  if(!manual && !['mac','windows'].includes(detectPlatform()))return false;
-  if(!manual && !(await clipboardPermissionGranted()))return false;
-  clipboardReadBusy=true;
-  try{
-    const text=await navigator.clipboard.readText();
-    clipboardAutoReadCapable=true;
-    localStorage.setItem('transfer.clipboardAutoRead','1');
-    updateClipboardUI();
-    if(text===lastObservedSystemClipboard)return false;
-    return acceptSystemClipboardText(text,{announce});
-  }catch(err){
-    if(manual)toast('Autoriza el portapapeles o pega manualmente');
-    return false;
-  }finally{clipboardReadBusy=false}
-}
-
-function scheduleClipboardRefresh(delay=120){
-  setTimeout(()=>refreshClipboardFromSystem({manual:false,announce:false}),delay);
+  if($('#clipboardMeta'))$('#clipboardMeta').textContent=clipboardText?'Guardado en TRANSFER':'Sin texto sincronizado';
 }
 function render(){renderDevices();renderRecents();updateClipboardUI();renderPairDialog()}
 
@@ -264,6 +187,7 @@ function handleMessage(conn,msg){
     const d=findDevice(remoteId);if(!d || connections.get(remoteId)!==conn)return;
     const text=String(msg.text||'');if(!text)return;
     clipboardText=text;save();updateClipboardUI();
+    if(detectPlatform()==='mac')void writeMacBridgeClipboard(text);
     const title=text.length>48?text.slice(0,48)+'…':text;
     addRecent(title,`Recibido de ${d.name} · ${nowLabel()}`,'≡',msg.id);
     conn.send({type:'ack',id:msg.id,protocol:APP_PROTOCOL});
@@ -297,10 +221,95 @@ function initPeer(){
       if(err?.type==='unavailable-id'){
         selfDevice.peerId=PEER_ID_PREFIX+randomChars(12);save();try{peer.destroy()}catch{};peer=null;setTimeout(initPeer,300);return;
       }
-      if(err?.type==='peer-unavailable'){networkError='';updateNetworkBadge();return}
       networkError=err?.type||'error';updateNetworkBadge();
     });
   }catch(err){networkError=String(err);updateNetworkBadge()}
+}
+
+
+// V3.5 — puente local de portapapeles para macOS.
+// El helper local escucha el portapapeles real del Mac aun cuando TRANSFER no tiene foco.
+let macBridgeOnline=false;
+let macBridgeTimer=null;
+let macBridgeBusy=false;
+let lastBridgeSeen='';
+
+function updateMacBridgeBadge(){
+  const e=$('#macBridgeBadge');if(!e)return;
+  if(detectPlatform()!=='mac'){e.hidden=true;return}
+  e.hidden=false;e.dataset.state=macBridgeOnline?'online':'offline';
+  e.textContent=macBridgeOnline?'Bridge Mac activo':'Bridge Mac no detectado';
+}
+
+async function macBridgeFetch(path,options={}){
+  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),550);
+  try{return await fetch(`${MAC_BRIDGE_URL}${path}`,{cache:'no-store',...options,signal:ctrl.signal})}
+  finally{clearTimeout(timer)}
+}
+
+function autoSendClipboardToCrossPlatform(text){
+  const targets=devices.filter(d=>d.online && (d.type==='Android'||d.type==='Windows'));
+  if(!targets.length || !text)return 0;
+  const msgId=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
+  let sent=0;const names=[];
+  targets.forEach(d=>{const conn=connections.get(d.peerId);if(conn?.open){conn.send({type:'text',protocol:APP_PROTOCOL,id:msgId,text,sentAt:Date.now(),device:selfInfo(),autoClipboard:true});sent++;names.push(d.name)}});
+  if(sent){
+    pendingAcks.set(msgId,{expected:sent,ok:new Set(),at:Date.now()});
+    addRecent(text.length>48?text.slice(0,48)+'…':text,`Portapapeles → ${names.join(', ')} · ${nowLabel()}`,'≡',msgId);
+  }
+  return sent;
+}
+
+async function pollMacBridge({autoSend=true}={}){
+  if(detectPlatform()!=='mac' || macBridgeBusy)return null;
+  macBridgeBusy=true;
+  try{
+    const response=await macBridgeFetch('/clipboard?_='+Date.now());
+    if(!response.ok)throw new Error(String(response.status));
+    const data=await response.json();
+    macBridgeOnline=true;updateMacBridgeBadge();
+    const text=typeof data.text==='string'?data.text:'';
+    if(text && text!==lastBridgeSeen){lastBridgeSeen=text}
+    if(text && text!==clipboardText){
+      clipboardText=text;save();updateClipboardUI();
+      if(autoSend)autoSendClipboardToCrossPlatform(text);
+    }
+    return text;
+  }catch{
+    if(macBridgeOnline){macBridgeOnline=false;updateMacBridgeBadge()}
+    return null;
+  }finally{macBridgeBusy=false}
+}
+
+async function writeMacBridgeClipboard(text){
+  if(detectPlatform()!=='mac' || !text)return false;
+  try{
+    const response=await macBridgeFetch('/clipboard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
+    if(!response.ok)throw new Error(String(response.status));
+    macBridgeOnline=true;lastBridgeSeen=text;updateMacBridgeBadge();return true;
+  }catch{macBridgeOnline=false;updateMacBridgeBadge();return false}
+}
+
+async function loadSystemClipboard({announce=true}={}){
+  if(detectPlatform()==='mac'){
+    const text=await pollMacBridge({autoSend:false});
+    if(text){clipboardText=text;save();updateClipboardUI();if(announce)toast('Portapapeles Mac actualizado');return text}
+  }
+  try{
+    const text=await navigator.clipboard.readText();
+    if(!text){if(announce)toast('El portapapeles está vacío');return ''}
+    clipboardText=text;save();updateClipboardUI();if(announce)toast('Texto cargado en TRANSFER');return text;
+  }catch{if(announce)toast('No se pudo leer el portapapeles');return ''}
+}
+
+function startMacBridgeIntegration(){
+  updateMacBridgeBadge();
+  if(detectPlatform()!=='mac')return;
+  pollMacBridge({autoSend:true});
+  if(macBridgeTimer)clearInterval(macBridgeTimer);
+  macBridgeTimer=setInterval(()=>{if(document.visibilityState==='visible')pollMacBridge({autoSend:true})},MAC_BRIDGE_POLL_MS);
+  window.addEventListener('focus',()=>pollMacBridge({autoSend:true}));
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollMacBridge({autoSend:true})});
 }
 
 function openSettings(){applyPlatform(localStorage.getItem('transfer.platform')||'auto');applyTheme(localStorage.getItem('transfer.theme')||'auto');$('#settingsDialog').showModal()}
@@ -335,8 +344,9 @@ $('#sendForm').addEventListener('submit',e=>{
   $('#sendDialog').close();toast(`Texto enviado a ${sent} dispositivo${sent===1?'':'s'} ✓`);
 });
 
-const copyBtn=$('#copyBtn');if(copyBtn)copyBtn.onclick=async()=>{const text=clipboardText||$('#clipboardPreview')?.textContent||'';if(!text)return toast('No hay texto para copiar');try{await navigator.clipboard.writeText(text);lastObservedSystemClipboard=text;toast('Copiado al portapapeles')}catch{toast('El navegador no permitió copiar')}};
-const pasteBtn=$('#pasteBtn');if(pasteBtn)pasteBtn.onclick=async()=>{const ok=await refreshClipboardFromSystem({manual:true,announce:true});if(!ok && !clipboardText)toast('El portapapeles está vacío o no cambió')};
+const copyBtn=$('#copyBtn');if(copyBtn)copyBtn.onclick=async()=>{const text=clipboardText||$('#clipboardPreview')?.textContent||'';if(!text)return toast('No hay texto para copiar');try{await navigator.clipboard.writeText(text);toast('Copiado al portapapeles')}catch{toast('El navegador no permitió copiar')}};
+const pasteBtn=$('#pasteBtn');if(pasteBtn)pasteBtn.onclick=()=>loadSystemClipboard({announce:true});
+const desktopPasteBtn=$('#desktopPasteBtn');if(desktopPasteBtn)desktopPasteBtn.onclick=()=>loadSystemClipboard({announce:true});
 
 function clearRecents(){recents=[];save();renderRecents();toast('Actividad reciente eliminada')}
 ['#mobileClearRecentBtn','#desktopClearRecentBtn'].forEach(sel=>{const e=$(sel);if(e)e.onclick=clearRecents});
@@ -403,27 +413,17 @@ $$('[data-tab]').forEach(b=>b.onclick=()=>{
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e});
 $('#installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else toast('Usa “Añadir a pantalla de inicio” del navegador')};
 
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(peer && peer.disconnected){try{peer.reconnect()}catch{}}reconnectAll();scheduleClipboardRefresh(180)}});
-window.addEventListener('focus',()=>scheduleClipboardRefresh(120));
-window.addEventListener('pageshow',()=>scheduleClipboardRefresh(220));
-window.addEventListener('online',()=>{networkError='';if(peer?.disconnected){try{peer.reconnect()}catch{}}reconnectAll();scheduleClipboardRefresh(250)});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(peer && peer.disconnected){try{peer.reconnect()}catch{}}reconnectAll()}});
+window.addEventListener('online',()=>{networkError='';if(peer?.disconnected){try{peer.reconnect()}catch{}}reconnectAll()});
 window.addEventListener('offline',()=>{devices.forEach(d=>d.online=false);renderDevices();setNetworkBadge('error','Sin Internet')});
 setInterval(()=>{
   if(!peerReady)return;
   devices.forEach(d=>{const c=connections.get(d.peerId);if(c?.open){try{c.send({type:'ping',protocol:APP_PROTOCOL,t:Date.now()})}catch{markOnline(d.peerId,false)}}else connectDevice(d)});
 },RECONNECT_MS);
 
-// V3.4 — mientras TRANSFER está visible en escritorio, comprueba si el
-// portapapeles cambió. Los navegadores que no conceden lectura persistente
-// simplemente ignoran estos intentos; el botón Pegar sigue siendo el respaldo.
-setInterval(()=>{
-  if(document.visibilityState==='visible' && document.hasFocus() && clipboardAutoReadCapable){
-    refreshClipboardFromSystem({manual:false,announce:false});
-  }
-},CLIPBOARD_POLL_MS);
-
 render();
 initPeer();
+startMacBridgeIntegration();
 
 // V3.2 — actualización automática de la PWA.
 // La app se instala una sola vez. Al abrir o volver al primer plano comprueba

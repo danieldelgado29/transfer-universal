@@ -45,3 +45,10 @@ body[data-platform="windows"]{font-family:"Segoe UI",Arial,sans-serif}body[data-
 .app-version-note{text-align:center;color:var(--muted);font-size:10px;margin:10px 0 0;letter-spacing:.02em}
 
 /* V3.3 — la PWA usa exclusivamente los controles nativos de macOS/Windows. */
+
+/* V3.5 — Bridge Mac */
+.clipboard-summary-actions{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.clipboard-summary-actions .mini-primary{margin-top:0}
+.bridge-badge{font-size:10px;font-weight:750;padding:6px 8px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--muted)}
+.bridge-badge[data-state="online"]{color:var(--green);border-color:color-mix(in srgb,var(--green) 32%,var(--line));background:color-mix(in srgb,var(--green) 8%,var(--panel))}
+.bridge-badge[data-state="offline"]{color:var(--muted)}
