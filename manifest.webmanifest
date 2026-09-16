@@ -6,7 +6,7 @@
   "display":"standalone",
   "background_color":"#f5f7fb",
   "theme_color":"#1682ff",
-  "description":"TRANSFER: portapapeles y transferencia entre iPhone, Android, Mac y Windows.",
+  "description":"TRANSFER V3: texto P2P entre iPhone, Android, Mac y Windows.",
   "icons":[
     {"src":"icons/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
     {"src":"icons/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}

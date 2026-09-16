@@ -1,17 +1,24 @@
-# TRANSFER PWA V2
+# TRANSFER V3 — P2P TEXT
 
-Base visual multiplataforma independiente para TRANSFER.
+Base independiente de TRANSFER.
 
-## Interfaces
-- iPhone / iOS: navegación móvil, tarjetas grandes, estilo táctil.
-- Android: variante Material, FAB y navegación adaptada.
-- Mac: ventana de escritorio, sidebar, arrastrar y soltar.
-- Windows: ventana Windows 11, panel lateral y ajustes rápidos.
+## V3
 
-## Apariencia
-Claro, oscuro y automático.
+- Conserva las interfaces específicas de iPhone, Android, Mac y Windows.
+- Claro / oscuro / automático.
+- WebRTC P2P real usando PeerJS para señalización.
+- Cada instalación genera un ID `tr-...` persistente.
+- Vinculación entre dos dispositivos con ID + PIN temporal de 6 dígitos.
+- Después de vincular, se guarda un token privado distinto para ese par de dispositivos.
+- Reconexión automática mientras la PWA está abierta.
+- `Enviar a…` transmite texto real al dispositivo seleccionado.
+- El dispositivo receptor guarda el texto en TRANSFER y lo deja listo para pulsar `Copiar`.
+- Historial local de textos enviados, recibidos y dispositivos vinculados.
 
-## Pruebas
-Ajustes > Interfaz del dispositivo permite forzar iPhone, Android, Mac o Windows para revisar el diseño desde un solo equipo.
+## Límites intencionales de esta etapa
 
-> V2 todavía prepara transferencias localmente. La sincronización real de portapapeles/archivos entre dispositivos es la siguiente capa del proyecto.
+- Los archivos todavía no se transmiten; el botón queda preparado para la siguiente etapa.
+- Una PWA no puede vigilar ni escribir libremente el portapapeles del sistema en segundo plano. El pegado completamente transparente requerirá las apps/componentes nativos.
+- PeerJS Cloud se usa únicamente para señalización WebRTC. Los datos P2P viajan por WebRTC entre los dispositivos cuando la ruta directa es posible.
+- Algunas redes con NAT restrictivo pueden necesitar un servidor TURN propio como respaldo.
+- Para la primera vinculación, ambos dispositivos deben tener TRANSFER abierto y conexión a Internet.

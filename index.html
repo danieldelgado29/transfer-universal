@@ -42,7 +42,7 @@
     <section class="desktop-content">
       <header class="desktop-header">
         <div><h1>TRANSFER</h1><p>Mover texto y archivos entre todos tus dispositivos</p></div>
-        <div class="header-actions"><label class="search-box">⌕<input placeholder="Buscar transferencias…" /></label><button class="icon-btn" id="desktopSettingsBtn" aria-label="Ajustes">⚙</button></div>
+        <div class="header-actions"><span class="network-badge" id="desktopNetworkBadge"><i></i><span>Conectando…</span></span><label class="search-box">⌕<input placeholder="Buscar transferencias…" /></label><button class="icon-btn" id="desktopSettingsBtn" aria-label="Ajustes">⚙</button></div>
       </header>
 
       <div class="desktop-layout">
@@ -95,7 +95,7 @@
   <div class="mobile-app mobile-only">
     <header class="mobile-topbar">
       <div><h1>TRANSFER</h1><p>Portapapeles universal</p></div>
-      <div class="mobile-header-actions"><button class="android-search">⌕</button><button class="icon-btn" id="mobileSettingsBtn" aria-label="Ajustes">⚙</button></div>
+      <div class="mobile-header-actions"><span class="network-badge compact" id="mobileNetworkBadge"><i></i><span>P2P</span></span><button class="android-search">⌕</button><button class="icon-btn" id="mobileSettingsBtn" aria-label="Ajustes">⚙</button></div>
     </header>
 
     <main class="mobile-main">
@@ -171,15 +171,30 @@
 
   <dialog id="deviceDialog" class="sheet">
     <form method="dialog" class="sheet-inner" id="deviceForm">
-      <div class="sheet-head"><div><h2>Agregar dispositivo</h2><p>Vinculación local de prototipo</p></div><button value="cancel" class="icon-btn">×</button></div>
-      <label class="content-card"><span>Nombre del dispositivo</span><input id="newDeviceName" required placeholder="Ej. iPhone Daniel"></label>
-      <label class="content-card"><span>Tipo</span><select id="newDeviceType"><option>iPhone</option><option>Android</option><option>Mac</option><option>Windows</option></select></label>
-      <div class="pair-code"><small>Código de vinculación</small><strong id="pairCode">8K-29-LP</strong></div>
-      <button class="primary-btn wide" type="submit" value="default">Vincular dispositivo</button>
+      <div class="sheet-head"><div><h2>Vincular dispositivo</h2><p>Conexión directa P2P entre tus equipos</p></div><button value="cancel" class="icon-btn">×</button></div>
+
+      <section class="pair-section">
+        <div class="pair-section-head"><div><h3>Este dispositivo</h3><p>Deja TRANSFER abierto durante la primera vinculación.</p></div><span class="live-dot" id="peerLiveDot"></span></div>
+        <label class="content-card"><span>Nombre</span><input id="selfDeviceName" autocomplete="off" placeholder="Ej. MacBook iSupport"></label>
+        <div class="pair-grid">
+          <div class="pair-value"><small>ID de conexión</small><strong id="selfPeerId">Preparando…</strong></div>
+          <div class="pair-value"><small>PIN temporal</small><strong id="selfPairPin">------</strong></div>
+        </div>
+        <div class="pair-actions"><button type="button" class="soft-btn" id="copyPairBtn">⧉ Copiar datos</button><button type="button" class="soft-btn" id="rotatePinBtn">↻ Nuevo PIN</button></div>
+      </section>
+
+      <section class="pair-section">
+        <div class="pair-section-head"><div><h3>Vincular otro dispositivo</h3><p>Escribe el ID y PIN que aparecen en el otro equipo.</p></div></div>
+        <label class="content-card"><span>ID del otro dispositivo</span><input id="remotePeerId" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="tr-xxxxxxxxxxxx"></label>
+        <label class="content-card"><span>PIN temporal</span><input id="remotePairPin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
+        <p class="pair-status" id="pairStatus">Listo para vincular.</p>
+        <button class="primary-btn wide" type="submit" value="default" id="pairNowBtn">⇄ Vincular ahora</button>
+      </section>
     </form>
   </dialog>
 
   <div class="toast" id="toast" role="status"></div>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
