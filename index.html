@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#f7f9fc" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0b1119" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0a0f16" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="TRANSFER" />
@@ -14,40 +14,114 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div>
-        <h1>TRANSFER</h1>
-        <p>Portapapeles universal</p>
+  <div class="desktop-window desktop-only">
+    <div class="desktop-chrome mac-chrome">
+      <div class="traffic"><i></i><i></i><i></i></div>
+      <strong>TRANSFER</strong>
+    </div>
+    <div class="desktop-chrome windows-chrome">
+      <div class="win-title"><span class="brand-mark">⇄</span><strong>TRANSFER</strong></div>
+      <div class="win-controls"><span>—</span><span>□</span><span>×</span></div>
+    </div>
+
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">⇄</span><strong>TRANSFER</strong></div>
+      <nav class="side-nav">
+        <button class="side-item active" data-tab="home"><span>⌂</span>Inicio</button>
+        <button class="side-item" data-tab="clipboard"><span>▣</span>Portapapeles</button>
+        <button class="side-item" data-tab="transfer"><span>⇄</span>Transferencias</button>
+        <button class="side-item" data-tab="devices"><span>▱</span>Dispositivos</button>
+        <button class="side-item" data-tab="settings"><span>⚙</span>Ajustes</button>
+      </nav>
+      <div class="sidebar-bottom">
+        <button class="theme-shortcut" id="themeShortcut"><span>☀</span><div><strong>Apariencia</strong><small>Claro, oscuro o automático</small></div><b>›</b></button>
+        <div class="profile-mini"><span>D</span><div><strong>Daniel</strong><small>TRANSFER personal</small></div></div>
       </div>
-      <button class="icon-btn" id="settingsBtn" aria-label="Ajustes">⚙︎</button>
+    </aside>
+
+    <section class="desktop-content">
+      <header class="desktop-header">
+        <div><h1>TRANSFER</h1><p>Mover texto y archivos entre todos tus dispositivos</p></div>
+        <div class="header-actions"><label class="search-box">⌕<input placeholder="Buscar transferencias…" /></label><button class="icon-btn" id="desktopSettingsBtn" aria-label="Ajustes">⚙</button></div>
+      </header>
+
+      <div class="desktop-layout">
+        <main class="desktop-main">
+          <section class="overview-grid">
+            <article class="summary-card" id="desktopClipboardCard"><span class="summary-icon">▣</span><div><strong>Portapapeles</strong><small>Texto copiado hace 1 min</small><p id="desktopClipboardPreview">Toca Pegar para leer el portapapeles</p></div><b>›</b></article>
+            <article class="summary-card"><span class="summary-icon">➤</span><div><strong>Enviar rápido</strong><small>Comparte archivos o texto</small><button class="mini-primary" data-open-send>Enviar a…</button></div></article>
+            <article class="summary-card"><span class="summary-icon status-icon">▱</span><div><strong>Estado</strong><small><span id="onlineCount">3</span> dispositivos disponibles</small><p>Sincronización lista</p></div><b>›</b></article>
+          </section>
+
+          <section class="desktop-grid">
+            <article class="panel upload-panel" id="dropZone">
+              <div class="panel-title"><span>⇧</span><div><h2>Arrastra archivos aquí</h2><p>Suelta archivos para prepararlos para envío</p></div></div>
+              <div class="drop-zone">
+                <span class="upload-cloud">☁</span>
+                <strong>Arrastra archivos aquí</strong>
+                <small>o haz clic para seleccionar</small>
+                <button class="soft-btn" id="desktopFileBtn">Seleccionar archivo</button>
+                <input type="file" id="desktopFileInput" hidden />
+              </div>
+              <small class="supported">Fotos, PDF, ZIP, audio, video y más</small>
+            </article>
+
+            <article class="panel devices-panel">
+              <div class="panel-head"><h2>▱ Mis dispositivos</h2><button class="text-btn" id="desktopAddDeviceBtn">Agregar +</button></div>
+              <div id="desktopDeviceList" class="compact-list"></div>
+            </article>
+          </section>
+
+          <section class="panel recent-panel">
+            <div class="panel-head"><h2>◷ Actividad reciente</h2><button class="text-btn" id="desktopClearRecentBtn">Limpiar</button></div>
+            <div id="desktopRecentList" class="compact-list"></div>
+          </section>
+        </main>
+
+        <aside class="windows-rail">
+          <section class="panel quick-settings">
+            <h2>Ajustes rápidos</h2>
+            <button id="windowsThemeBtn"><span>☀</span><div><strong>Apariencia</strong><small id="windowsThemeValue">Automático</small></div><b>›</b></button>
+            <button><span>◉</span><div><strong>Notificaciones</strong><small>Activadas</small></div><b>›</b></button>
+            <button><span>↻</span><div><strong>Sincronización</strong><small>Automática</small></div><b>›</b></button>
+            <button><span>▣</span><div><strong>Privacidad</strong><small>Dispositivos vinculados</small></div><b>›</b></button>
+          </section>
+          <section class="panel version-card"><span>⊞</span><div><strong>TRANSFER para Windows</strong><small>V2 · interfaz adaptativa</small></div></section>
+        </aside>
+      </div>
+    </section>
+  </div>
+
+  <div class="mobile-app mobile-only">
+    <header class="mobile-topbar">
+      <div><h1>TRANSFER</h1><p>Portapapeles universal</p></div>
+      <div class="mobile-header-actions"><button class="android-search">⌕</button><button class="icon-btn" id="mobileSettingsBtn" aria-label="Ajustes">⚙</button></div>
     </header>
 
-    <main>
+    <main class="mobile-main">
       <section class="hero-card card">
         <div class="hero-icon">▣</div>
-        <div class="hero-copy">
-          <strong id="clipboardTitle">Texto listo para compartir</strong>
-          <p id="clipboardPreview">Toca “Pegar” para leer tu portapapeles.</p>
-          <small id="clipboardMeta">Sincronización local de prueba</small>
-        </div>
+        <div class="hero-copy"><strong id="clipboardTitle">Texto listo para compartir</strong><p id="clipboardPreview">Toca “Pegar” para leer tu portapapeles.</p><small id="clipboardMeta">Sincronización local de prueba</small></div>
+        <span class="chev">›</span>
       </section>
 
       <section class="quick-actions">
         <button class="soft-btn" id="copyBtn">⧉ <span>Copiar</span></button>
         <button class="soft-btn" id="pasteBtn">▣ <span>Pegar</span></button>
-        <button class="primary-btn" id="sendBtn">➤ <span>Enviar a…</span></button>
+        <button class="primary-btn" data-open-send>➤ <span>Enviar a…</span></button>
       </section>
 
       <section class="section-block">
-        <div class="section-title"><h2>▱ Mis dispositivos</h2><button class="text-btn" id="addDeviceBtn">Agregar +</button></div>
-        <div class="card device-list" id="deviceList"></div>
+        <div class="section-title"><h2>▱ Mis dispositivos</h2><button class="text-btn" id="mobileAddDeviceBtn">Agregar +</button></div>
+        <div class="card device-list" id="mobileDeviceList"></div>
       </section>
 
       <section class="section-block">
-        <div class="section-title"><h2>◷ Recientes</h2><button class="text-btn" id="clearRecentBtn">Limpiar</button></div>
-        <div class="card recent-list" id="recentList"></div>
+        <div class="section-title"><h2>◷ Recientes</h2><button class="text-btn" id="mobileClearRecentBtn">Limpiar</button></div>
+        <div class="card recent-list" id="mobileRecentList"></div>
       </section>
+
+      <button class="android-fab" data-open-send>➤</button>
     </main>
 
     <nav class="bottom-nav">
@@ -59,54 +133,45 @@
 
   <dialog id="sendDialog" class="sheet">
     <form method="dialog" class="sheet-inner" id="sendForm">
-      <div class="sheet-head">
-        <div><h2>Enviar a…</h2><p>Selecciona uno o varios dispositivos</p></div>
-        <button value="cancel" class="icon-btn">×</button>
-      </div>
-      <div class="segmented">
-        <button type="button" class="segment active" data-kind="text">Texto</button>
-        <button type="button" class="segment" data-kind="file">Archivo</button>
-      </div>
-      <label class="content-card" id="textAreaWrap">
-        <span>Contenido</span>
-        <textarea id="sendText" rows="3" placeholder="Escribe o pega texto aquí"></textarea>
-      </label>
-      <label class="content-card hidden" id="fileAreaWrap">
-        <span>Archivo</span>
-        <input type="file" id="fileInput" />
-      </label>
+      <div class="sheet-head"><div><h2>Enviar a…</h2><p>Selecciona uno o varios dispositivos</p></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="segmented"><button type="button" class="segment active" data-kind="text">Texto</button><button type="button" class="segment" data-kind="file">Archivo</button></div>
+      <label class="content-card" id="textAreaWrap"><span>Contenido</span><textarea id="sendText" rows="3" placeholder="Escribe o pega texto aquí"></textarea></label>
+      <label class="content-card hidden" id="fileAreaWrap"><span>Archivo</span><input type="file" id="fileInput" /></label>
       <h3 class="subheading">Dispositivos disponibles</h3>
       <div id="sendDeviceList" class="select-list"></div>
-      <label class="toggle-row">
-        <div><strong>Enviar a todos</strong><small>Selecciona todos los equipos disponibles</small></div>
-        <input type="checkbox" id="selectAll" />
-      </label>
+      <label class="toggle-row"><div><strong>Enviar a todos</strong><small>Selecciona todos los equipos disponibles</small></div><input type="checkbox" id="selectAll" /></label>
       <button type="submit" value="default" class="primary-btn wide" id="sendNowBtn">➤ Enviar ahora</button>
     </form>
   </dialog>
 
   <dialog id="settingsDialog" class="sheet">
     <form method="dialog" class="sheet-inner settings-sheet">
-      <div class="sheet-head">
-        <div><h2>Apariencia</h2><p>Personaliza cómo se ve la app</p></div>
-        <button value="cancel" class="icon-btn">×</button>
-      </div>
-      <div class="appearance-options" id="appearanceOptions">
+      <div class="sheet-head"><div><h2>Apariencia</h2><p>Personaliza TRANSFER</p></div><button value="cancel" class="icon-btn">×</button></div>
+      <h3 class="subheading">Tema</h3>
+      <div class="appearance-options">
         <label class="appearance-row"><span class="appearance-icon">☀</span><span><strong>Claro</strong><small>Interfaz clara</small></span><input type="radio" name="theme" value="light"></label>
         <label class="appearance-row"><span class="appearance-icon">☾</span><span><strong>Oscuro</strong><small>Interfaz oscura</small></span><input type="radio" name="theme" value="dark"></label>
         <label class="appearance-row"><span class="appearance-icon">◐</span><span><strong>Automático</strong><small>Sigue la configuración del sistema</small></span><input type="radio" name="theme" value="auto"></label>
       </div>
-      <div class="preview-pair">
-        <div class="mini-preview light-preview"><b>TRANSFER</b><span></span><span></span><i></i></div>
-        <div class="mini-preview dark-preview"><b>TRANSFER</b><span></span><span></span><i></i></div>
+
+      <h3 class="subheading platform-heading">Interfaz del dispositivo</h3>
+      <div class="platform-options">
+        <label><span>◎</span><b>Automática</b><input type="radio" name="platform" value="auto"></label>
+        <label><span>▯</span><b>iPhone</b><input type="radio" name="platform" value="ios"></label>
+        <label><span>♟</span><b>Android</b><input type="radio" name="platform" value="android"></label>
+        <label><span>▱</span><b>Mac</b><input type="radio" name="platform" value="mac"></label>
+        <label><span>⊞</span><b>Windows</b><input type="radio" name="platform" value="windows"></label>
       </div>
+      <p class="platform-note" id="platformNote"></p>
+
+      <div class="preview-pair"><div class="mini-preview light-preview"><b>TRANSFER</b><span></span><span></span><i></i></div><div class="mini-preview dark-preview"><b>TRANSFER</b><span></span><span></span><i></i></div></div>
       <button type="button" class="soft-btn wide" id="installBtn">＋ Instalar PWA</button>
     </form>
   </dialog>
 
   <dialog id="deviceDialog" class="sheet">
     <form method="dialog" class="sheet-inner" id="deviceForm">
-      <div class="sheet-head"><div><h2>Agregar dispositivo</h2><p>Primer prototipo de vinculación</p></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="sheet-head"><div><h2>Agregar dispositivo</h2><p>Vinculación local de prototipo</p></div><button value="cancel" class="icon-btn">×</button></div>
       <label class="content-card"><span>Nombre del dispositivo</span><input id="newDeviceName" required placeholder="Ej. iPhone Daniel"></label>
       <label class="content-card"><span>Tipo</span><select id="newDeviceType"><option>iPhone</option><option>Android</option><option>Mac</option><option>Windows</option></select></label>
       <div class="pair-code"><small>Código de vinculación</small><strong id="pairCode">8K-29-LP</strong></div>
