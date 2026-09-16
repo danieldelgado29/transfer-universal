@@ -1,4 +1,4 @@
-# TRANSFER V3.1 — P2P TEXT + UI FIXES
+# TRANSFER V3.2 — P2P TEXT + AUTO UPDATE
 
 Base independiente de TRANSFER.
 
@@ -32,3 +32,15 @@ Base independiente de TRANSFER.
 - Cada botón copia únicamente el valor correspondiente, sin etiquetas ni texto adicional.
 - El campo ID limpia automáticamente textos antiguos como `TRANSFER ID: tr-...` al pegar.
 - Los controles de ventana dibujados de Windows se marcan como decorativos; el cierre real de la PWA corresponde al control nativo del sistema.
+
+
+## V3.2 — actualización automática
+
+- La PWA se instala una sola vez.
+- Al abrir TRANSFER ejecuta `registration.update()` con `updateViaCache: none`.
+- También comprueba `version.json` con `cache: no-store`.
+- Si existe un Service Worker nuevo, lo activa con `SKIP_WAITING` y recarga una sola vez.
+- Al volver al primer plano y cada 5 minutos vuelve a comprobar si existe una versión nueva.
+- El Service Worker usa red primero para HTML/JS/CSS/manifest/version y conserva caché como respaldo offline.
+- Una actualización no borra `localStorage`: se mantienen ID, PIN, tokens de vinculación, dispositivos, tema, interfaz e historial local.
+- No es necesario reinstalar la PWA después de cada versión.

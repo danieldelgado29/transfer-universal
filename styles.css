@@ -41,3 +41,6 @@ body[data-platform="mac"] .mac-chrome{display:flex}body[data-platform="windows"]
 .pair-copy-btn:active{transform:scale(.985)}
 .win-controls[aria-hidden="true"]{pointer-events:none;user-select:none}
 [data-close-dialog]{cursor:pointer;touch-action:manipulation}
+
+/* V3.2 — indicador discreto de actualización */
+.app-version-note{text-align:center;color:var(--muted);font-size:10px;margin:10px 0 0;letter-spacing:.02em}

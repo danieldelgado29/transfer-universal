@@ -5,6 +5,8 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
+const APP_VERSION = '3.2.0';
+const UPDATE_CHECK_MS = 5 * 60 * 1000;
 const icons = {Mac:'▱',iPhone:'▯',Android:'♟',Windows:'⊞'};
 
 function escapeHtml(s=''){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -331,4 +333,81 @@ setInterval(()=>{
 
 render();
 initPeer();
-if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js'));
+
+// V3.2 — actualización automática de la PWA.
+// La app se instala una sola vez. Al abrir o volver al primer plano comprueba
+// GitHub Pages, activa el Service Worker nuevo y recarga una sola vez.
+let swRegistration = null;
+let updateCheckBusy = false;
+let controllerReloading = false;
+
+async function activateWaitingWorker(reg){
+  if(reg?.waiting){
+    reg.waiting.postMessage({type:'SKIP_WAITING'});
+    return true;
+  }
+  return false;
+}
+
+async function checkForAppUpdate({quiet=true}={}){
+  if(!('serviceWorker' in navigator) || updateCheckBusy)return;
+  updateCheckBusy=true;
+  try{
+    const reg=swRegistration || await navigator.serviceWorker.getRegistration('./');
+    if(reg){
+      swRegistration=reg;
+      await reg.update();
+      if(await activateWaitingWorker(reg))return;
+    }
+
+    // version.json se pide sin caché para detectar una publicación nueva incluso
+    // cuando la PWA estaba suspendida durante horas o días.
+    const response=await fetch(`./version.json?_=${Date.now()}`,{cache:'no-store',headers:{'cache-control':'no-cache'}});
+    if(!response.ok)throw new Error(`version ${response.status}`);
+    const remote=await response.json();
+    if(remote?.version && remote.version!==APP_VERSION){
+      if(!quiet)toast(`Actualizando TRANSFER ${remote.version}…`);
+      if(reg){
+        await reg.update();
+        if(await activateWaitingWorker(reg))return;
+      }
+      // Si el navegador aún no expone el worker nuevo, una recarga con el SW
+      // network-first obliga a solicitar el shell actualizado.
+      setTimeout(()=>location.reload(),350);
+    }
+  }catch(err){
+    console.debug('TRANSFER update check',err);
+  }finally{updateCheckBusy=false}
+}
+
+async function setupServiceWorker(){
+  if(!('serviceWorker' in navigator))return;
+  try{
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{
+      if(controllerReloading)return;
+      controllerReloading=true;
+      sessionStorage.setItem('transfer.lastAutoUpdate',String(Date.now()));
+      location.reload();
+    });
+
+    swRegistration=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
+    swRegistration.addEventListener('updatefound',()=>{
+      const worker=swRegistration.installing;
+      if(!worker)return;
+      worker.addEventListener('statechange',()=>{
+        if(worker.state==='installed' && navigator.serviceWorker.controller){
+          activateWaitingWorker(swRegistration);
+        }
+      });
+    });
+
+    await checkForAppUpdate({quiet:true});
+  }catch(err){console.warn('TRANSFER Service Worker',err)}
+}
+
+window.addEventListener('load',setupServiceWorker);
+window.addEventListener('focus',()=>checkForAppUpdate({quiet:true}));
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible')checkForAppUpdate({quiet:true});
+});
+setInterval(()=>checkForAppUpdate({quiet:true}),UPDATE_CHECK_MS);
