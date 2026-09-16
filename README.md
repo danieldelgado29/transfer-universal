@@ -1,4 +1,4 @@
-# TRANSFER V3 — P2P TEXT
+# TRANSFER V3.1 — P2P TEXT + UI FIXES
 
 Base independiente de TRANSFER.
 
@@ -22,3 +22,13 @@ Base independiente de TRANSFER.
 - PeerJS Cloud se usa únicamente para señalización WebRTC. Los datos P2P viajan por WebRTC entre los dispositivos cuando la ruta directa es posible.
 - Algunas redes con NAT restrictivo pueden necesitar un servidor TURN propio como respaldo.
 - Para la primera vinculación, ambos dispositivos deben tener TRANSFER abierto y conexión a Internet.
+
+
+## V3.1
+
+- Los botones `×` de Enviar a…, Apariencia y Vincular dispositivo cierran siempre la ventana y ya no disparan formularios.
+- Tocar el fondo oscuro de una ventana modal también la cierra.
+- ID y PIN tienen botones independientes: `Copiar ID` y `Copiar PIN`.
+- Cada botón copia únicamente el valor correspondiente, sin etiquetas ni texto adicional.
+- El campo ID limpia automáticamente textos antiguos como `TRANSFER ID: tr-...` al pegar.
+- Los controles de ventana dibujados de Windows se marcan como decorativos; el cierre real de la PWA corresponde al control nativo del sistema.

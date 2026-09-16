@@ -263,16 +263,40 @@ function openDeviceDialog(){renderPairDialog();if($('#pairStatus'))$('#pairStatu
 ['#mobileAddDeviceBtn','#desktopAddDeviceBtn'].forEach(sel=>{const e=$(sel);if(e)e.onclick=openDeviceDialog});
 $('#selfDeviceName')?.addEventListener('change',e=>{const v=e.target.value.trim();if(v){selfDevice.name=v;save();reconnectAll();toast('Nombre actualizado')}});
 $('#rotatePinBtn')?.addEventListener('click',()=>{selfDevice.pin=randomPin();save();renderPairDialog();toast('PIN renovado')});
-$('#copyPairBtn')?.addEventListener('click',async()=>{const text=`TRANSFER\nID: ${selfDevice.peerId}\nPIN: ${selfDevice.pin}`;try{await navigator.clipboard.writeText(text);toast('ID y PIN copiados')}catch{toast(`${selfDevice.peerId} · PIN ${selfDevice.pin}`)}});
+async function copyPlain(value,successLabel){
+  try{await navigator.clipboard.writeText(String(value));toast(successLabel)}
+  catch{toast(`No se pudo copiar automáticamente: ${value}`)}
+}
+$('#copySelfIdBtn')?.addEventListener('click',()=>copyPlain(selfDevice.peerId,'ID copiado ✓'));
+$('#copySelfPinBtn')?.addEventListener('click',()=>copyPlain(selfDevice.pin,'PIN copiado ✓'));
+
+function normalizeRemoteId(raw){
+  const text=String(raw||'').trim().toLowerCase();
+  const match=text.match(/tr-[a-z0-9-]{6,40}/);
+  return match?match[0]:text.replace(/^transfer\s*id\s*:\s*/i,'').trim();
+}
+$('#remotePeerId')?.addEventListener('input',e=>{
+  const cleaned=normalizeRemoteId(e.target.value);
+  if(cleaned!==e.target.value && /^tr-[a-z0-9-]{6,40}$/.test(cleaned))e.target.value=cleaned;
+});
 $('#deviceForm').addEventListener('submit',e=>{
   e.preventDefault();
   if(!peerReady){toast('La red P2P todavía no está lista');return}
-  const remoteId=$('#remotePeerId').value.trim().toLowerCase();const pin=$('#remotePairPin').value.trim();
+  const remoteId=normalizeRemoteId($('#remotePeerId').value);$('#remotePeerId').value=remoteId;const pin=$('#remotePairPin').value.trim();
   if(!/^tr-[a-z0-9-]{6,40}$/.test(remoteId)){toast('ID de dispositivo inválido');return}
   if(remoteId===selfDevice.peerId){toast('Ese es este mismo dispositivo');return}
   if(!/^\d{6}$/.test(pin)){toast('El PIN debe tener 6 números');return}
   $('#pairStatus').textContent='Conectando con el otro dispositivo…';
   try{const conn=peer.connect(remoteId,{reliable:true,metadata:{app:'TRANSFER',protocol:APP_PROTOCOL,pairing:true}});attachConnection(conn,{pairing:true,pin});setTimeout(()=>{if(!findDevice(remoteId) && $('#deviceDialog').open)$('#pairStatus').textContent='Aún no responde. Revisa que el otro dispositivo tenga TRANSFER abierto y el PIN sea actual.'},7000)}catch{$('#pairStatus').textContent='No se pudo iniciar la conexión.'}
+});
+
+// Cierre robusto de todas las ventanas modales. Los botones X nunca envían formularios.
+$$('[data-close-dialog]').forEach(btn=>btn.addEventListener('click',()=>{
+  const dialog=btn.closest('dialog');
+  if(dialog?.open)dialog.close('cancel');
+}));
+$$('dialog.sheet').forEach(dialog=>{
+  dialog.addEventListener('click',e=>{if(e.target===dialog && dialog.open)dialog.close('cancel')});
 });
 
 document.addEventListener('click',e=>{

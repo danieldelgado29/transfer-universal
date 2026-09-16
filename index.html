@@ -21,7 +21,7 @@
     </div>
     <div class="desktop-chrome windows-chrome">
       <div class="win-title"><span class="brand-mark">⇄</span><strong>TRANSFER</strong></div>
-      <div class="win-controls"><span>—</span><span>□</span><span>×</span></div>
+      <div class="win-controls" aria-hidden="true"><span>—</span><span>□</span><span>×</span></div>
     </div>
 
     <aside class="sidebar">
@@ -133,7 +133,7 @@
 
   <dialog id="sendDialog" class="sheet">
     <form method="dialog" class="sheet-inner" id="sendForm">
-      <div class="sheet-head"><div><h2>Enviar a…</h2><p>Selecciona uno o varios dispositivos</p></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="sheet-head"><div><h2>Enviar a…</h2><p>Selecciona uno o varios dispositivos</p></div><button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button></div>
       <div class="segmented"><button type="button" class="segment active" data-kind="text">Texto</button><button type="button" class="segment" data-kind="file">Archivo</button></div>
       <label class="content-card" id="textAreaWrap"><span>Contenido</span><textarea id="sendText" rows="3" placeholder="Escribe o pega texto aquí"></textarea></label>
       <label class="content-card hidden" id="fileAreaWrap"><span>Archivo</span><input type="file" id="fileInput" /></label>
@@ -146,7 +146,7 @@
 
   <dialog id="settingsDialog" class="sheet">
     <form method="dialog" class="sheet-inner settings-sheet">
-      <div class="sheet-head"><div><h2>Apariencia</h2><p>Personaliza TRANSFER</p></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="sheet-head"><div><h2>Apariencia</h2><p>Personaliza TRANSFER</p></div><button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button></div>
       <h3 class="subheading">Tema</h3>
       <div class="appearance-options">
         <label class="appearance-row"><span class="appearance-icon">☀</span><span><strong>Claro</strong><small>Interfaz clara</small></span><input type="radio" name="theme" value="light"></label>
@@ -171,16 +171,16 @@
 
   <dialog id="deviceDialog" class="sheet">
     <form method="dialog" class="sheet-inner" id="deviceForm">
-      <div class="sheet-head"><div><h2>Vincular dispositivo</h2><p>Conexión directa P2P entre tus equipos</p></div><button value="cancel" class="icon-btn">×</button></div>
+      <div class="sheet-head"><div><h2>Vincular dispositivo</h2><p>Conexión directa P2P entre tus equipos</p></div><button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button></div>
 
       <section class="pair-section">
         <div class="pair-section-head"><div><h3>Este dispositivo</h3><p>Deja TRANSFER abierto durante la primera vinculación.</p></div><span class="live-dot" id="peerLiveDot"></span></div>
         <label class="content-card"><span>Nombre</span><input id="selfDeviceName" autocomplete="off" placeholder="Ej. MacBook iSupport"></label>
         <div class="pair-grid">
-          <div class="pair-value"><small>ID de conexión</small><strong id="selfPeerId">Preparando…</strong></div>
-          <div class="pair-value"><small>PIN temporal</small><strong id="selfPairPin">------</strong></div>
+          <div class="pair-value"><small>ID de conexión</small><strong id="selfPeerId">Preparando…</strong><button type="button" class="pair-copy-btn" id="copySelfIdBtn" aria-label="Copiar ID de conexión">⧉ Copiar ID</button></div>
+          <div class="pair-value"><small>PIN temporal</small><strong id="selfPairPin">------</strong><button type="button" class="pair-copy-btn" id="copySelfPinBtn" aria-label="Copiar PIN temporal">⧉ Copiar PIN</button></div>
         </div>
-        <div class="pair-actions"><button type="button" class="soft-btn" id="copyPairBtn">⧉ Copiar datos</button><button type="button" class="soft-btn" id="rotatePinBtn">↻ Nuevo PIN</button></div>
+        <div class="pair-actions"><button type="button" class="soft-btn" id="rotatePinBtn">↻ Nuevo PIN</button></div>
       </section>
 
       <section class="pair-section">
