@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.6.0';
+const APP_VERSION = '3.7.0';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -122,7 +122,10 @@ function updateClipboardUI(){
   if($('#clipboardPreview'))$('#clipboardPreview').textContent=preview;
   if($('#desktopClipboardPreview'))$('#desktopClipboardPreview').textContent=preview;
   if($('#clipboardTitle'))$('#clipboardTitle').textContent=clipboardText?'Texto sincronizado listo para pegar':'Texto listo para compartir';
-  if($('#clipboardMeta'))$('#clipboardMeta').textContent=clipboardText?'Guardado en TRANSFER':'Sin texto sincronizado';
+  if($('#clipboardMeta')){
+    const nativeAndroid=detectPlatform()==='android' && androidNativeBridgeAvailable();
+    $('#clipboardMeta').textContent=nativeAndroid?'Portapapeles Android automático':(clipboardText?'Guardado en TRANSFER':'Sin texto sincronizado');
+  }
 }
 function render(){renderDevices();renderRecents();updateClipboardUI();renderPairDialog()}
 
@@ -188,6 +191,7 @@ function handleMessage(conn,msg){
     const text=String(msg.text||'');if(!text)return;
     clipboardText=text;save();updateClipboardUI();
     if(detectPlatform()==='mac')void writeMacBridgeClipboard(text);
+    if(detectPlatform()==='android' && androidNativeBridgeAvailable())writeAndroidNativeClipboard(text);
     const title=text.length>48?text.slice(0,48)+'…':text;
     addRecent(title,`Recibido de ${d.name} · ${nowLabel()}`,'≡',msg.id);
     conn.send({type:'ack',id:msg.id,protocol:APP_PROTOCOL});
@@ -309,6 +313,11 @@ async function writeMacBridgeClipboard(text){
 }
 
 async function loadSystemClipboard({announce=true}={}){
+  if(detectPlatform()==='android' && androidNativeBridgeAvailable()){
+    requestAndroidNativeClipboard();
+    if(announce)toast('Portapapeles Android actualizado');
+    return clipboardText;
+  }
   if(detectPlatform()==='mac'){
     const text=await pollMacBridge({autoSend:false});
     if(text){clipboardText=text;save();updateClipboardUI();if(announce)toast('Portapapeles Mac actualizado');return text}
@@ -328,6 +337,92 @@ function startMacBridgeIntegration(){
   macBridgeTimer=setInterval(()=>{if(document.visibilityState==='visible')pollMacBridge({autoSend:true})},MAC_BRIDGE_POLL_MS);
   window.addEventListener('focus',()=>pollMacBridge({autoSend:true}));
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pollMacBridge({autoSend:true})});
+}
+
+
+// V3.7 - integración con la app Android nativa.
+// Recibido por P2P -> portapapeles real Android.
+// Copiado en Android -> al volver a TRANSFER se detecta sin tocar Pegar.
+let lastAndroidNativeSeen='';
+let lastAndroidNativeSent='';
+
+function androidNativeBridgeAvailable(){
+  try{
+    return detectPlatform()==='android'
+      && typeof window.TRANSFERAndroid!=='undefined'
+      && typeof window.TRANSFERAndroid.setClipboard==='function';
+  }catch{return false}
+}
+
+function writeAndroidNativeClipboard(text){
+  if(!androidNativeBridgeAvailable() || !text)return false;
+  try{
+    window.TRANSFERAndroid.setClipboard(String(text));
+    return true;
+  }catch{return false}
+}
+
+function autoSendAndroidClipboard(text){
+  text=String(text||'');
+  if(!text || text===lastAndroidNativeSent)return 0;
+  const targets=devices.filter(d=>d.online && (d.type==='Mac'||d.type==='Windows'));
+  if(!targets.length)return 0;
+  const msgId=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
+  let sent=0;const names=[];
+  targets.forEach(d=>{
+    const conn=connections.get(d.peerId);
+    if(conn?.open){
+      try{
+        conn.send({type:'text',protocol:APP_PROTOCOL,id:msgId,text,sentAt:Date.now(),device:selfInfo(),autoClipboard:true,source:'android-native'});
+        sent++;names.push(d.name);
+      }catch{}
+    }
+  });
+  if(sent){
+    lastAndroidNativeSent=text;
+    pendingAcks.set(msgId,{expected:sent,ok:new Set(),at:Date.now()});
+    addRecent(text.length>48?text.slice(0,48)+'…':text,`Portapapeles Android -> ${names.join(', ')} · ${nowLabel()}`,'≡',msgId);
+  }
+  return sent;
+}
+
+window.TRANSFERNativeAndroidClipboard=function(text){
+  text=String(text||'');
+  if(!text)return;
+  if(text===lastAndroidNativeSeen)return;
+  lastAndroidNativeSeen=text;
+
+  const changed=text!==clipboardText;
+  if(changed){
+    clipboardText=text;
+    save();
+    updateClipboardUI();
+  }
+
+  const sent=autoSendAndroidClipboard(text);
+  if(changed && !sent){
+    addRecent(text.length>48?text.slice(0,48)+'…':text,`Portapapeles Android actualizado · ${nowLabel()}`,'≡');
+  }
+};
+
+function requestAndroidNativeClipboard(){
+  if(!androidNativeBridgeAvailable())return false;
+  try{
+    window.TRANSFERAndroid.requestClipboardSync();
+    return true;
+  }catch{return false}
+}
+
+function startAndroidNativeIntegration(){
+  if(detectPlatform()!=='android')return;
+  updateClipboardUI();
+  if(androidNativeBridgeAvailable())requestAndroidNativeClipboard();
+
+  window.addEventListener('transfer-android-native-ready',()=>{
+    updateClipboardUI();
+    requestAndroidNativeClipboard();
+    toast('Android nativo conectado ✓');
+  });
 }
 
 function openSettings(){applyPlatform(localStorage.getItem('transfer.platform')||'auto');applyTheme(localStorage.getItem('transfer.theme')||'auto');$('#settingsDialog').showModal()}
@@ -362,7 +457,7 @@ $('#sendForm').addEventListener('submit',e=>{
   $('#sendDialog').close();toast(`Texto enviado a ${sent} dispositivo${sent===1?'':'s'} ✓`);
 });
 
-const copyBtn=$('#copyBtn');if(copyBtn)copyBtn.onclick=async()=>{const text=clipboardText||$('#clipboardPreview')?.textContent||'';if(!text)return toast('No hay texto para copiar');try{await navigator.clipboard.writeText(text);toast('Copiado al portapapeles')}catch{toast('El navegador no permitió copiar')}};
+const copyBtn=$('#copyBtn');if(copyBtn)copyBtn.onclick=async()=>{const text=clipboardText||$('#clipboardPreview')?.textContent||'';if(!text)return toast('No hay texto para copiar');if(detectPlatform()==='android'&&androidNativeBridgeAvailable()){writeAndroidNativeClipboard(text);toast('Listo para pegar en Android');return}try{await navigator.clipboard.writeText(text);toast('Copiado al portapapeles')}catch{toast('El navegador no permitió copiar')}};
 const pasteBtn=$('#pasteBtn');if(pasteBtn)pasteBtn.onclick=()=>loadSystemClipboard({announce:true});
 const desktopPasteBtn=$('#desktopPasteBtn');if(desktopPasteBtn)desktopPasteBtn.onclick=()=>loadSystemClipboard({announce:true});
 
@@ -442,6 +537,7 @@ setInterval(()=>{
 render();
 initPeer();
 startMacBridgeIntegration();
+startAndroidNativeIntegration();
 
 // V3.2 — actualización automática de la PWA.
 // La app se instala una sola vez. Al abrir o volver al primer plano comprueba

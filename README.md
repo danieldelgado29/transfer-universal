@@ -74,3 +74,13 @@ Base independiente de TRANSFER.
 - Se mantiene fallback HTTP para otros navegadores.
 - `fetch()` marca explícitamente el destino como `loopback` cuando el navegador soporta Local Network Access.
 - No se toca ningún componente EGP / Logic Bridge.
+
+
+## V3.7 - Android nativo
+
+- Recibido por P2P en la app Android nativa -> portapapeles real Android automático.
+- Copiar en otra app Android -> al volver a TRANSFER se detecta sin tocar Pegar.
+- El texto detectado en Android se envía automáticamente a Mac/Windows conectados.
+- Se evita el rebote del mismo texto al escribirlo desde TRANSFER al portapapeles Android.
+- La PWA normal conserva Copiar/Pegar como respaldo.
+- No se modifica ningún componente EGP / Logic Bridge.
