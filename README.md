@@ -149,3 +149,18 @@ Corrección:
 - Se conserva cierre automático al completar la vinculación.
 - No requiere reinstalar el APK Android V1.2.
 - No modifica EGP / Logic Bridge.
+
+
+## V3.8.5 - Reanudación Android
+
+Corrige el caso en que Android abría otra app, el WebView suspendía la conexión P2P
+y al volver TRANSFER seguía conservando un DataChannel aparentemente abierto pero muerto.
+
+- Al volver TRANSFER al primer plano en Android, se reconstruyen las conexiones P2P.
+- Se conservan los dispositivos vinculados y sus tokens; no hay que escanear de nuevo.
+- La Mac envía una instantánea del portapapeles actual después de la reconexión.
+- Si se copiaron textos mientras Android estuvo suspendido, al volver a TRANSFER recibe el último.
+- El portapapeles recibido vuelve a escribirse en el portapapeles real de Android.
+- No modifica el flujo QR aprobado de V3.8.4.
+- No requiere reinstalar el APK Android V1.2.
+- No modifica EGP / Logic Bridge.

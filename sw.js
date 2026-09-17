@@ -1,4 +1,4 @@
-const CACHE='transfer-pwa-v3-8-4-incoming-pair-fix';
+const CACHE='transfer-pwa-v3-8-5-android-resume';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./version.json','./icons/icon-192.png','./icons/icon-512.png','./vendor/qrcode.min.js','./vendor/html5-qrcode.min.js'];
 
 async function putFresh(cache,url){

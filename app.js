@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.8.4';
+const APP_VERSION = '3.8.5';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -511,7 +511,28 @@ function handleMessage(conn,msg){
   if(msg.type==='hello'){
     const d=findDevice(remoteId);
     if(!d || !d.token || msg.token!==d.token){conn.send({type:'error',message:'Dispositivo no autorizado'});setTimeout(()=>conn.close(),150);return}
-    authenticate(conn,{...msg.device,peerId:remoteId});conn.send({type:'hello-accepted',protocol:APP_PROTOCOL,device:selfInfo()});return;
+    authenticate(conn,{...msg.device,peerId:remoteId});
+    conn.send({type:'hello-accepted',protocol:APP_PROTOCOL,device:selfInfo()});
+
+    if(detectPlatform()==='mac'){
+      void pollMacBridge({autoSend:false}).then(latest=>{
+        const text=String(latest||clipboardText||'');
+        if(!text || !conn.open)return;
+        try{
+          conn.send({
+            type:'text',
+            protocol:APP_PROTOCOL,
+            id:crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`,
+            text,
+            sentAt:Date.now(),
+            device:selfInfo(),
+            autoClipboard:true,
+            source:'mac-resume-sync'
+          });
+        }catch{}
+      });
+    }
+    return;
   }
   if(msg.type==='hello-accepted'){
     const d=findDevice(remoteId);if(!d)return;authenticate(conn,{...(msg.device||d),peerId:remoteId});return;
@@ -519,13 +540,20 @@ function handleMessage(conn,msg){
   if(msg.type==='text'){
     const d=findDevice(remoteId);if(!d || connections.get(remoteId)!==conn)return;
     const text=String(msg.text||'');if(!text)return;
+    const same=text===clipboardText;
+
     clipboardText=text;save();updateClipboardUI();
     if(detectPlatform()==='mac')void writeMacBridgeClipboard(text);
     if(detectPlatform()==='android' && androidNativeBridgeAvailable())writeAndroidNativeClipboard(text);
-    const title=text.length>48?text.slice(0,48)+'…':text;
-    addRecent(title,`Recibido de ${d.name} · ${nowLabel()}`,'≡',msg.id);
+
+    if(!(msg.source==='mac-resume-sync' && same)){
+      const title=text.length>48?text.slice(0,48)+'…':text;
+      addRecent(title,`Recibido de ${d.name} · ${nowLabel()}`,'≡',msg.id);
+      toast(`Texto recibido de ${d.name}`);
+    }
+
     conn.send({type:'ack',id:msg.id,protocol:APP_PROTOCOL});
-    toast(`Texto recibido de ${d.name}`);return;
+    return;
   }
   if(msg.type==='ack'){
     const pending=pendingAcks.get(msg.id);if(pending){pending.ok.add(remoteId);if(pending.ok.size>=pending.expected){pendingAcks.delete(msg.id)}}return;
@@ -540,6 +568,41 @@ function connectDevice(d){
   try{const conn=peer.connect(d.peerId,{reliable:true,metadata:{app:'TRANSFER',protocol:APP_PROTOCOL}});attachConnection(conn)}catch{}
 }
 function reconnectAll(){if(!peerReady)return;devices.forEach(connectDevice)}
+
+let lastAndroidResumeRepair=0;
+let androidResumeRetryTimer=null;
+
+function restoreAndroidConnectionsAfterResume(){
+  if(detectPlatform()!=='android')return;
+  if(document.visibilityState!=='visible')return;
+
+  const now=Date.now();
+  if(now-lastAndroidResumeRepair<1200)return;
+  lastAndroidResumeRepair=now;
+
+  devices.forEach(d=>{
+    const c=connections.get(d.peerId);
+    try{c?.close()}catch{}
+    connections.delete(d.peerId);
+    d.online=false;
+  });
+  renderDevices();
+
+  try{
+    if(peer?.disconnected)peer.reconnect();
+  }catch{}
+
+  const retry=()=>{
+    if(peerReady)reconnectAll();
+    requestAndroidNativeClipboard();
+  };
+
+  setTimeout(retry,180);
+  setTimeout(retry,650);
+
+  if(androidResumeRetryTimer)clearTimeout(androidResumeRetryTimer);
+  androidResumeRetryTimer=setTimeout(retry,1600);
+}
 
 function initPeer(){
   updateNetworkBadge();
@@ -993,8 +1056,30 @@ $$('[data-tab]').forEach(b=>b.onclick=()=>{
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e});
 $('#installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else toast('Usa “Añadir a pantalla de inicio” del navegador')};
 
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(peer && peer.disconnected){try{peer.reconnect()}catch{}}reconnectAll()}});
-window.addEventListener('online',()=>{networkError='';if(peer?.disconnected){try{peer.reconnect()}catch{}}reconnectAll()});
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState!=='visible')return;
+  if(detectPlatform()==='android'){
+    restoreAndroidConnectionsAfterResume();
+    return;
+  }
+  if(peer && peer.disconnected){try{peer.reconnect()}catch{}}
+  reconnectAll();
+});
+
+window.addEventListener('focus',()=>{
+  if(detectPlatform()==='android')restoreAndroidConnectionsAfterResume();
+});
+
+window.addEventListener('pageshow',()=>{
+  if(detectPlatform()==='android')restoreAndroidConnectionsAfterResume();
+});
+
+window.addEventListener('online',()=>{
+  networkError='';
+  if(peer?.disconnected){try{peer.reconnect()}catch{}}
+  if(detectPlatform()==='android')restoreAndroidConnectionsAfterResume();
+  else reconnectAll();
+});
 window.addEventListener('offline',()=>{devices.forEach(d=>d.online=false);renderDevices();setNetworkBadge('error','Sin Internet')});
 setInterval(()=>{
   if(!peerReady)return;
