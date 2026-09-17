@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.8.2';
+const APP_VERSION = '3.8.3';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -55,6 +55,7 @@ let networkError = '';
 const connections = new Map(); // peerId -> authenticated DataConnection
 const pendingPair = new Map(); // peerId -> DataConnection
 const inboundPair = new Map(); // peerId -> sesión de vinculación entrante pendiente de confirmación
+const pairingSessions = new Map(); // peerId -> sesión saliente con reintentos automáticos
 const pendingAcks = new Map();
 
 function save(){
@@ -187,17 +188,31 @@ function clearInboundPair(remoteId,conn=null){
   if(!p)return;
   if(conn && p.conn!==conn)return;
   if(p.timer)clearInterval(p.timer);
+  if(p.cleanupTimer)clearTimeout(p.cleanupTimer);
   inboundPair.delete(remoteId);
 }
 
 function sendInboundPairAccepted(remoteId){
   const p=inboundPair.get(remoteId);
-  if(!p || !p.conn?.open)return;
+  if(!p || p.completed || !p.conn?.open)return;
   try{
     p.conn.send({type:'pair-accepted',protocol:APP_PROTOCOL,token:p.token,device:selfInfo()});
     p.tries=(p.tries||0)+1;
   }catch{}
-  if(p.tries>=12){
+  if(p.tries>=30){
+    if(p.timer)clearInterval(p.timer);
+    p.timer=null;
+  }
+}
+
+function sendInboundPairComplete(remoteId){
+  const p=inboundPair.get(remoteId);
+  if(!p || !p.completed || !p.conn?.open)return;
+  try{
+    p.conn.send({type:'pair-complete',protocol:APP_PROTOCOL,token:p.token,device:selfInfo()});
+    p.completeTries=(p.completeTries||0)+1;
+  }catch{}
+  if(p.completeTries>=30){
     if(p.timer)clearInterval(p.timer);
     p.timer=null;
   }
@@ -206,8 +221,24 @@ function sendInboundPairAccepted(remoteId){
 function stageInboundPair(conn,msg){
   const remoteId=conn.peer;
   let p=inboundPair.get(remoteId);
+
+  if(p?.completed){
+    p.conn=conn;
+    sendInboundPairComplete(remoteId);
+    return;
+  }
+
   if(!p){
-    p={token:randomToken(),device:{...(msg.device||{}),peerId:remoteId},conn,tries:0,timer:null};
+    p={
+      token:randomToken(),
+      device:{...(msg.device||{}),peerId:remoteId},
+      conn,
+      tries:0,
+      completeTries:0,
+      completed:false,
+      timer:null,
+      cleanupTimer:null
+    };
     inboundPair.set(remoteId,p);
   }else{
     p.device={...(msg.device||p.device||{}),peerId:remoteId};
@@ -215,8 +246,75 @@ function stageInboundPair(conn,msg){
     p.tries=0;
     if(p.timer)clearInterval(p.timer);
   }
+
   sendInboundPairAccepted(remoteId);
   p.timer=setInterval(()=>sendInboundPairAccepted(remoteId),650);
+}
+
+function stopPairingSession(remoteId,{keepConn=null,closeExtra=false}={}){
+  const session=pairingSessions.get(remoteId);
+  if(!session)return;
+  session.done=true;
+  if(session.retryTimer)clearInterval(session.retryTimer);
+  if(session.deadlineTimer)clearTimeout(session.deadlineTimer);
+  if(session.confirmTimer)clearInterval(session.confirmTimer);
+  for(const t of session.requestTimers.values())clearInterval(t);
+  session.requestTimers.clear();
+
+  if(closeExtra){
+    for(const c of session.connections){
+      if(c===keepConn)continue;
+      try{c.close()}catch{}
+    }
+  }
+  pairingSessions.delete(remoteId);
+}
+
+function sendPairRequest(session,conn){
+  if(!session || session.done || session.accepted || !conn?.open)return;
+  try{
+    pendingPair.set(session.remoteId,conn);
+    conn.send({
+      type:'pair-request',
+      protocol:APP_PROTOCOL,
+      pin:session.pin,
+      device:selfInfo()
+    });
+  }catch{}
+}
+
+function launchPairAttempt(session){
+  if(!session || session.done || session.accepted || !peerReady || !peer)return;
+  if(session.attempts>=8)return;
+
+  session.attempts++;
+  if($('#pairStatus')){
+    $('#pairStatus').textContent=`Conectando automáticamente… intento ${session.attempts}`;
+  }
+
+  try{
+    const conn=peer.connect(session.remoteId,{
+      reliable:true,
+      metadata:{app:'TRANSFER',protocol:APP_PROTOCOL,pairing:true}
+    });
+    session.connections.add(conn);
+    attachConnection(conn,{pairing:true,pin:session.pin});
+
+    const timer=setInterval(()=>sendPairRequest(session,conn),700);
+    session.requestTimers.set(conn,timer);
+
+    conn.on('open',()=>sendPairRequest(session,conn));
+    conn.on('close',()=>{
+      clearInterval(timer);
+      session.requestTimers.delete(conn);
+      session.connections.delete(conn);
+    });
+    conn.on('error',()=>{
+      clearInterval(timer);
+      session.requestTimers.delete(conn);
+      session.connections.delete(conn);
+    });
+  }catch{}
 }
 
 function attachConnection(conn,{pairing=false,pin=''}={}){
@@ -234,16 +332,18 @@ function attachConnection(conn,{pairing=false,pin=''}={}){
   });
   conn.on('data',msg=>handleMessage(conn,msg));
   conn.on('close',()=>{
-    if(connections.get(remoteId)===conn)connections.delete(remoteId);
+    const wasCurrent=connections.get(remoteId)===conn;
+    if(wasCurrent)connections.delete(remoteId);
     if(pendingPair.get(remoteId)===conn)pendingPair.delete(remoteId);
     clearInboundPair(remoteId,conn);
-    markOnline(remoteId,false);
+    if(wasCurrent)markOnline(remoteId,false);
   });
   conn.on('error',()=>{
-    if(connections.get(remoteId)===conn)connections.delete(remoteId);
+    const wasCurrent=connections.get(remoteId)===conn;
+    if(wasCurrent)connections.delete(remoteId);
     if(pendingPair.get(remoteId)===conn)pendingPair.delete(remoteId);
     clearInboundPair(remoteId,conn);
-    markOnline(remoteId,false);
+    if(wasCurrent)markOnline(remoteId,false);
   });
 }
 function authenticate(conn,device){connections.set(conn.peer,conn);upsertDevice(device,null,true);updateNetworkBadge()}
@@ -253,39 +353,57 @@ function handleMessage(conn,msg){
   if(msg.protocol && msg.protocol!==APP_PROTOCOL){conn.send({type:'error',message:'Versión de protocolo incompatible'});return}
 
   if(msg.type==='pair-request'){
+    const staged=inboundPair.get(remoteId);
+
+    if(staged?.completed){
+      staged.conn=conn;
+      sendInboundPairComplete(remoteId);
+      return;
+    }
+
     if(String(msg.pin)!==String(selfDevice.pin)){
       conn.send({type:'pair-rejected',message:'Código temporal incorrecto'});
       setTimeout(()=>conn.close(),250);
       return;
     }
+
     stageInboundPair(conn,msg);
     return;
   }
 
   if(msg.type==='pair-accepted'){
     if(!msg.token)return;
-    const previous=findDevice(remoteId);
-    const already=previous?.token===msg.token;
-    const d=upsertDevice({...msg.device,peerId:remoteId},msg.token,true);
-    connections.set(remoteId,conn);
+    const session=pairingSessions.get(remoteId);
+    if(!session)return;
+
+    session.accepted=true;
+    session.token=msg.token;
+    session.remoteDevice={...(msg.device||{}),peerId:remoteId};
     pendingPair.delete(remoteId);
 
+    for(const t of session.requestTimers.values())clearInterval(t);
+    session.requestTimers.clear();
+    if(session.retryTimer){clearInterval(session.retryTimer);session.retryTimer=null}
+
     const confirm=()=>{
+      if(session.done)return;
+      const c=[...session.connections].find(x=>x?.open) || conn;
       try{
-        if(conn.open)conn.send({
+        if(c?.open)c.send({
           type:'pair-confirmed',
           protocol:APP_PROTOCOL,
-          token:msg.token,
+          token:session.token,
           device:selfInfo()
         });
       }catch{}
     };
-    confirm();
-    setTimeout(confirm,250);
-    setTimeout(confirm,750);
 
-    if($('#pairStatus'))$('#pairStatus').textContent=`Confirmando vínculo con ${d?.name||remoteId}…`;
-    if(!already)addRecent('Dispositivo vinculado',`${d?.name||remoteId} · ahora`,'⇄');
+    confirm();
+    if(!session.confirmTimer)session.confirmTimer=setInterval(confirm,650);
+
+    if($('#pairStatus')){
+      $('#pairStatus').textContent=`Confirmando vínculo con ${session.remoteDevice?.name||remoteId}…`;
+    }
     return;
   }
 
@@ -293,38 +411,99 @@ function handleMessage(conn,msg){
     const p=inboundPair.get(remoteId);
     if(!p || !msg.token || msg.token!==p.token)return;
 
-    if(p.timer)clearInterval(p.timer);
-    inboundPair.delete(remoteId);
+    p.conn=conn;
 
-    const d=upsertDevice({...p.device,peerId:remoteId},p.token,true);
-    connections.set(remoteId,conn);
+    if(!p.completed){
+      if(p.timer)clearInterval(p.timer);
+      p.timer=null;
+      p.completed=true;
+      p.completeTries=0;
 
-    selfDevice.pin=randomPin();
-    save();
-    renderPairDialog();
-    renderDevices();
+      const d=upsertDevice({...p.device,peerId:remoteId},p.token,true);
+      connections.set(remoteId,conn);
 
-    try{conn.send({type:'pair-complete',protocol:APP_PROTOCOL,token:p.token,device:selfInfo()})}catch{}
-    setTimeout(()=>{try{if(conn.open)conn.send({type:'pair-complete',protocol:APP_PROTOCOL,token:p.token,device:selfInfo()})}catch{}},300);
+      selfDevice.pin=randomPin();
+      save();
+      renderPairDialog();
+      renderDevices();
 
-    addRecent('Dispositivo vinculado',`${d?.name||remoteId} · ahora`,'⇄');
-    toast(`${d?.name||'Dispositivo'} vinculado ✓`);
+      addRecent('Dispositivo vinculado',`${d?.name||remoteId} · ahora`,'⇄');
+    }
+
+    sendInboundPairComplete(remoteId);
+    if(!p.timer)p.timer=setInterval(()=>sendInboundPairComplete(remoteId),650);
+
+    if($('#pairStatus'))$('#pairStatus').textContent='Confirmando en el otro dispositivo…';
     return;
   }
 
   if(msg.type==='pair-complete'){
+    const session=pairingSessions.get(remoteId);
+    let d=findDevice(remoteId);
+
+    if(session){
+      if(!session.token || !msg.token || session.token!==msg.token)return;
+      d=upsertDevice({...session.remoteDevice,...(msg.device||{}),peerId:remoteId},session.token,true);
+      connections.set(remoteId,conn);
+      stopPairingSession(remoteId,{keepConn:conn,closeExtra:true});
+    }else{
+      if(!d || !msg.token || d.token!==msg.token)return;
+      connections.set(remoteId,conn);
+      markOnline(remoteId,true);
+    }
+
+    const ack=()=>{
+      try{
+        if(conn.open)conn.send({
+          type:'pair-complete-ack',
+          protocol:APP_PROTOCOL,
+          token:msg.token,
+          device:selfInfo()
+        });
+      }catch{}
+    };
+    ack();
+    setTimeout(ack,250);
+    setTimeout(ack,700);
+
+    qrPairBusy=false;
+    if($('#pairStatus'))$('#pairStatus').textContent=`Vinculado con ${d?.name||remoteId} ✓`;
+    toast('Dispositivo vinculado ✓');
+    setTimeout(()=>{
+      if($('#deviceDialog')?.open)$('#deviceDialog').close('paired');
+    },350);
+    return;
+  }
+
+  if(msg.type==='pair-complete-ack'){
+    const p=inboundPair.get(remoteId);
     const d=findDevice(remoteId);
-    if(!d || !msg.token || d.token!==msg.token)return;
+    if(!p || !p.completed || !msg.token || msg.token!==p.token || !d)return;
+
+    if(p.timer)clearInterval(p.timer);
+    p.timer=null;
     connections.set(remoteId,conn);
     markOnline(remoteId,true);
+
     if($('#pairStatus'))$('#pairStatus').textContent=`Vinculado con ${d.name||remoteId} ✓`;
     toast('Dispositivo vinculado ✓');
-    setTimeout(()=>$('#deviceDialog')?.close(),500);
+
+    if(p.cleanupTimer)clearTimeout(p.cleanupTimer);
+    p.cleanupTimer=setTimeout(()=>clearInboundPair(remoteId),1800);
+
+    setTimeout(()=>{
+      if($('#deviceDialog')?.open)$('#deviceDialog').close('paired');
+    },350);
     return;
   }
 
   if(msg.type==='pair-rejected'){
-    pendingPair.delete(remoteId);if($('#pairStatus'))$('#pairStatus').textContent=msg.message||'No se pudo vincular';toast(msg.message||'Vinculación rechazada');return;
+    stopPairingSession(remoteId,{closeExtra:true});
+    qrPairBusy=false;
+    pendingPair.delete(remoteId);
+    if($('#pairStatus'))$('#pairStatus').textContent=msg.message||'No se pudo vincular';
+    toast(msg.message||'Vinculación rechazada');
+    return;
   }
   if(msg.type==='hello'){
     const d=findDevice(remoteId);
@@ -632,26 +811,51 @@ async function pairWithCredentials(remoteId,pin,{fromQr=false}={}){
   if(!peerReady){toast('La red P2P todavía no está lista');return false}
   remoteId=normalizeRemoteId(remoteId);
   pin=String(pin||'').trim();
+
   if(!/^tr-[a-z0-9-]{6,40}$/.test(remoteId)){toast('Dispositivo inválido');return false}
   if(remoteId===selfDevice.peerId){toast('Ese QR pertenece a este mismo dispositivo');return false}
   if(!/^\d{6}$/.test(pin)){toast('Código de vinculación inválido');return false}
+
   if($('#remotePeerId'))$('#remotePeerId').value=remoteId;
   if($('#remotePairPin'))$('#remotePairPin').value=pin;
-  if($('#pairStatus'))$('#pairStatus').textContent=fromQr?'QR leído. Vinculando automáticamente…':'Conectando con el otro dispositivo…';
-  try{
-    const conn=peer.connect(remoteId,{reliable:true,metadata:{app:'TRANSFER',protocol:APP_PROTOCOL,pairing:true}});
-    attachConnection(conn,{pairing:true,pin});
-    setTimeout(()=>{
-      if(!findDevice(remoteId) && $('#deviceDialog')?.open && $('#pairStatus')){
-        qrPairBusy=false;
-        $('#pairStatus').textContent='Aún no responde. Deja TRANSFER abierto en ambos dispositivos e inténtalo otra vez.';
-      }
-    },7000);
-    return true;
-  }catch{
-    if($('#pairStatus'))$('#pairStatus').textContent='No se pudo iniciar la conexión.';
-    return false;
-  }
+  if($('#pairStatus'))$('#pairStatus').textContent=fromQr?'QR leído. Vinculando automáticamente…':'Conectando automáticamente…';
+
+  stopPairingSession(remoteId,{closeExtra:true});
+
+  const session={
+    remoteId,
+    pin,
+    startedAt:Date.now(),
+    attempts:0,
+    accepted:false,
+    done:false,
+    token:'',
+    remoteDevice:null,
+    connections:new Set(),
+    requestTimers:new Map(),
+    retryTimer:null,
+    deadlineTimer:null,
+    confirmTimer:null
+  };
+  pairingSessions.set(remoteId,session);
+
+  launchPairAttempt(session);
+
+  session.retryTimer=setInterval(()=>{
+    if(session.done || session.accepted)return;
+    launchPairAttempt(session);
+  },2500);
+
+  session.deadlineTimer=setTimeout(()=>{
+    if(session.done)return;
+    stopPairingSession(remoteId,{closeExtra:true});
+    qrPairBusy=false;
+    if($('#pairStatus') && $('#deviceDialog')?.open){
+      $('#pairStatus').textContent='No se pudo completar. Toca Abrir cámara y vuelve a escanear.';
+    }
+  },25000);
+
+  return true;
 }
 
 async function handleScannedPairQr(decodedText){
@@ -747,7 +951,13 @@ $('#deviceForm').addEventListener('submit',e=>{
   e.preventDefault();
   void pairWithCredentials($('#remotePeerId').value,$('#remotePairPin').value,{fromQr:false});
 });
-$('#deviceDialog')?.addEventListener('close',()=>{void stopQrScanner()});
+$('#deviceDialog')?.addEventListener('close',()=>{
+  void stopQrScanner();
+  if($('#deviceDialog')?.returnValue!=='paired'){
+    for(const remoteId of [...pairingSessions.keys()])stopPairingSession(remoteId,{closeExtra:true});
+    qrPairBusy=false;
+  }
+});
 
 // Cierre robusto de todas las ventanas modales. Los botones X nunca envían formularios.
 $$('[data-close-dialog]').forEach(btn=>btn.addEventListener('click',()=>{

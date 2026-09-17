@@ -119,3 +119,15 @@ Flujo nuevo: `pair-request -> pair-accepted (reintentos) -> pair-confirmed -> pa
 - La ventana solo muestra éxito cuando ambos dispositivos completaron el intercambio.
 - No requiere reconstruir ni reinstalar Android nativo V1.2.
 - No modifica EGP / Logic Bridge.
+
+
+## V3.8.3 - Vinculación QR con reintento automático
+
+- El dispositivo que escanea reintenta la conexión P2P automáticamente.
+- `pair-request`, `pair-confirmed` y `pair-complete` se repiten hasta completar el intercambio.
+- Se añadió `pair-complete-ack`: ambas ventanas se cierran automáticamente solo cuando el vínculo quedó confirmado.
+- No se guarda un dispositivo a medias en el lado que escanea.
+- Cerrar una conexión vieja ya no marca como desconectada una conexión nueva válida.
+- En Android/iPhone, `Escanear QR / Abrir cámara` aparece como primera sección.
+- No requiere reinstalar el APK Android V1.2.
+- No modifica EGP / Logic Bridge.

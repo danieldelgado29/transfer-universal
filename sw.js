@@ -1,4 +1,4 @@
-const CACHE='transfer-pwa-v3-8-2-qr-handshake';
+const CACHE='transfer-pwa-v3-8-3-qr-retry';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./version.json','./icons/icon-192.png','./icons/icon-512.png','./vendor/qrcode.min.js','./vendor/html5-qrcode.min.js'];
 
 async function putFresh(cache,url){

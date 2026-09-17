@@ -84,3 +84,12 @@ body[data-platform="windows"]{font-family:"Segoe UI",Arial,sans-serif}body[data-
   .pair-qr-box{width:238px;height:238px}
   .camera-illustration{height:130px}
 }
+
+
+/* V3.8.3 - en teléfonos, ESCANEAR QR es la primera sección */
+@media(max-width:700px){
+  body[data-platform="android"] .qr-pair-layout .scan-card,
+  body[data-platform="ios"] .qr-pair-layout .scan-card{
+    order:-1;
+  }
+}
