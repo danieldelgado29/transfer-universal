@@ -209,3 +209,22 @@ V3.9.1 elimina ese bloque y lleva los cambios visuales al HTML/JS principal:
 - Recientes empieza plegado y se abre/cierra con flecha.
 - Enviar archivo sigue pendiente; no se presenta como corregido.
 - QR, tokens, P2P, Android background y Mac Bridge no se modifican.
+
+
+## V3.9.2 - Reparación P2P / QR / cámara
+
+V3.9.1 eliminó visualmente el botón `installBtn`, pero `app.js` seguía intentando
+asignarle `.onclick` sin comprobar si existía. Eso detenía JavaScript antes de:
+- `render()`
+- `initPeer()`
+- `startMacBridgeIntegration()`
+- `startAndroidNativeIntegration()`
+
+Consecuencias visibles:
+- los dispositivos vinculados parecían desaparecer;
+- P2P no arrancaba;
+- el QR quedaba en “Preparando QR…”;
+- Abrir cámara no podía vincular porque `peerReady` nunca llegaba a activarse.
+
+V3.9.2 hace esa referencia opcional y deja continuar el arranque normal.
+No borra vínculos, tokens ni preferencias.

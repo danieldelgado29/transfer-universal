@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.9.1';
+const APP_VERSION = '3.9.2';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -1129,7 +1129,8 @@ $$('[data-tab]').forEach(b=>b.onclick=()=>{
 });
 
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e});
-$('#installBtn').onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else toast('Usa “Añadir a pantalla de inicio” del navegador')};
+const installBtn=$('#installBtn');
+if(installBtn)installBtn.onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else toast('Usa “Añadir a pantalla de inicio” del navegador')};
 
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState!=='visible')return;
