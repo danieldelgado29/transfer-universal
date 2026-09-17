@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.8.3';
+const APP_VERSION = '3.8.4';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -317,18 +317,21 @@ function launchPairAttempt(session){
   }catch{}
 }
 
-function attachConnection(conn,{pairing=false,pin=''}={}){
+function attachConnection(conn,{pairing=false,pin='',incoming=false}={}){
   if(!conn)return;
   const remoteId=conn.peer;
   conn.on('open',()=>{
     if(pairing){
       pendingPair.set(remoteId,conn);
       conn.send({type:'pair-request',protocol:APP_PROTOCOL,pin,device:selfInfo()});
-    }else{
+    }else if(!incoming){
       const d=findDevice(remoteId);
       if(!d?.token){conn.close();return}
       conn.send({type:'hello',protocol:APP_PROTOCOL,token:d.token,device:selfInfo()});
     }
+    // IMPORTANTE: una conexión entrante desconocida NO se cierra aquí.
+    // Debe quedarse abierta para poder recibir pair-request del dispositivo
+    // que acaba de escanear el QR. handleMessage validará después el PIN/token.
   });
   conn.on('data',msg=>handleMessage(conn,msg));
   conn.on('close',()=>{
@@ -544,7 +547,7 @@ function initPeer(){
   try{
     peer=new Peer(selfDevice.peerId,{debug:0});
     peer.on('open',id=>{peerReady=true;networkError='';selfDevice.peerId=id;save();renderPairDialog();updateNetworkBadge();reconnectAll()});
-    peer.on('connection',conn=>attachConnection(conn));
+    peer.on('connection',conn=>attachConnection(conn,{incoming:true}));
     peer.on('disconnected',()=>{peerReady=false;updateNetworkBadge();try{peer.reconnect()}catch{}});
     peer.on('close',()=>{peerReady=false;updateNetworkBadge()});
     peer.on('error',err=>{

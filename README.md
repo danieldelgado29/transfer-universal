@@ -131,3 +131,21 @@ Flujo nuevo: `pair-request -> pair-accepted (reintentos) -> pair-confirmed -> pa
 - En Android/iPhone, `Escanear QR / Abrir cámara` aparece como primera sección.
 - No requiere reinstalar el APK Android V1.2.
 - No modifica EGP / Logic Bridge.
+
+
+## V3.8.4 - Corrección real de vinculación QR
+
+Causa encontrada:
+las conexiones PeerJS entrantes eran tratadas como reconexiones normales. Al abrirse,
+TRANSFER buscaba un token previo y, como el dispositivo todavía no estaba vinculado,
+cerraba la conexión antes de que pudiera llegar `pair-request`.
+
+Corrección:
+- `attachConnection` distingue ahora conexiones entrantes nuevas.
+- Una conexión entrante no se cierra por no tener token previo.
+- `handleMessage` recibe y valida `pair-request` normalmente.
+- Las reconexiones de dispositivos ya vinculados siguen validando token.
+- Se conserva cámara primero en Android/iPhone.
+- Se conserva cierre automático al completar la vinculación.
+- No requiere reinstalar el APK Android V1.2.
+- No modifica EGP / Logic Bridge.
