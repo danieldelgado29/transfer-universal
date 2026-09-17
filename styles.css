@@ -119,3 +119,29 @@ body[data-platform="windows"]{font-family:"Segoe UI",Arial,sans-serif}body[data-
   .mobile-app .hero-copy strong{font-size:18px}
   .mobile-app .device-icon{width:46px;height:46px;border-radius:15px}
 }
+
+
+/* V3.9.1 — rediseño móvil aplicado directamente */
+.mobile-app .clipboard-main-card{cursor:pointer;position:relative;padding-right:56px}
+.mobile-app .clipboard-main-card .hero-icon{font-size:30px}
+.mobile-app .clipboard-open-btn{position:absolute;right:12px;top:50%;transform:translateY(-50%);width:40px;height:48px;border:0;background:transparent;color:var(--muted);font-size:34px;display:grid;place-items:center;cursor:pointer}
+.mobile-app .quick-actions.quick-actions-single{display:block;margin:13px 0 26px}
+.mobile-app .mobile-send-main{width:100%;padding:16px 14px;border-radius:18px;font-size:16px}
+.mobile-app .mobile-device-send{width:100%;border:0;background:transparent;text-align:left;cursor:pointer;touch-action:manipulation}
+.mobile-app .mobile-device-send:active{background:var(--panel2)}
+.mobile-app .mobile-device-send.is-offline{opacity:.72}
+.real-device-icon{font-size:26px}
+.direct-send-arrow{font-size:28px;color:var(--muted);padding:0 4px}
+.recent-section-toggle{width:100%;border:0;background:transparent;color:var(--text);padding:0 4px 11px;margin:0;cursor:pointer}
+.recent-section-toggle h2{margin:0;font-size:20px}
+.recent-section-toggle span{font-size:24px;color:var(--muted)}
+#mobileRecentList[hidden]{display:none!important}
+.clipboard-full-box{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:17px;min-height:150px}
+.clipboard-full-box pre{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit;line-height:1.5;color:var(--text)}
+#settingsDialog .appearance-options{margin-top:6px}
+@media(max-width:540px){
+  .mobile-app .hero-card{padding-top:18px;padding-bottom:18px}
+  .mobile-app .hero-copy strong{font-size:19px}
+  .mobile-app .hero-copy p{max-width:100%;font-size:14px}
+  .mobile-app .hero-copy small{font-size:11px}
+}

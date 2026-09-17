@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.9.0';
+const APP_VERSION = '3.9.1';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -77,6 +77,21 @@ function updateNetworkBadge(){
 }
 function findDevice(peerId){return devices.find(d=>d.peerId===peerId)}
 function deviceLabel(d){return String(d?.alias||d?.name||'Dispositivo')}
+function deviceGlyph(d){
+  const hay=String(`${d?.alias||''} ${d?.name||''} ${d?.type||''}`).toLowerCase();
+  if(hay.includes('iphone') || d?.type==='iPhone')return '📱';
+  if(hay.includes('android') || d?.type==='Android')return '🤖';
+  if(hay.includes('imac'))return '🖥️';
+  if(hay.includes('macbook') || hay.includes('laptop'))return '💻';
+  if(d?.type==='Mac')return '💻';
+  if(hay.includes('windows') || d?.type==='Windows')return '🪟';
+  return '📲';
+}
+function clipboardPreviewText(text,max=78){
+  const t=String(text||'').trim();
+  if(!t)return 'Aún no hay texto sincronizado.';
+  return t.length>max?t.slice(0,max)+'…':t;
+}
 function upsertDevice(info,token,online=true){
   if(!info?.peerId || info.peerId===selfDevice.peerId)return null;
   let d=findDevice(info.peerId);
@@ -101,34 +116,47 @@ function applyTheme(choice){
   $$('input[name="theme"]').forEach(r=>r.checked=r.value===choice);
   const labels={auto:'Automático',light:'Claro',dark:'Oscuro'}; const el=$('#windowsThemeValue'); if(el)el.textContent=labels[choice];
 }
-mediaDark.addEventListener?.('change',()=>{if((localStorage.getItem('transfer.theme')||'auto')==='auto')applyTheme('auto')});
+mediaDark.addEventListener?.('change',()=>{if((localStorage.getItem('transfer.theme')||'light')==='auto')applyTheme('light')});
 applyPlatform(localStorage.getItem('transfer.platform')||'auto');
-applyTheme(localStorage.getItem('transfer.theme')||'auto');
+applyTheme(localStorage.getItem('transfer.theme')==='dark'?'dark':'light');
 
-function deviceRows(){
+function deviceRows(mobile=false){
   if(!devices.length)return `<div class="empty-state"><strong>No hay dispositivos vinculados</strong><small>Toca “Agregar” y escanea el QR del otro equipo.</small></div>`;
-  return devices.map(d=>`<div class="device-row" data-peer="${escapeHtml(d.peerId)}"><div class="device-icon">${icons[d.type]||'▱'}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}${d.lastSeen&&!d.online?` · visto ${new Date(d.lastSeen).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:''}</div></div><div class="device-actions"><button class="device-action rename-device" type="button" data-rename-peer="${escapeHtml(d.peerId)}" title="Renombrar">✎</button><button class="ellipsis remove-device device-action" type="button" data-remove-peer="${escapeHtml(d.peerId)}" title="Desvincular">•••</button></div></div>`).join('');
+  return devices.map(d=>{
+    const status=d.online?'Conectado':'Desconectado';
+    const last=d.lastSeen&&!d.online?` · visto ${new Date(d.lastSeen).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:'';
+    if(mobile){
+      return `<div class="device-row mobile-device-send ${d.online?'':'is-offline'}" data-send-peer="${escapeHtml(d.peerId)}" role="button" tabindex="0"><div class="device-icon real-device-icon">${deviceGlyph(d)}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${status}${last}</div></div><div class="device-actions"><button class="device-action rename-device" type="button" data-rename-peer="${escapeHtml(d.peerId)}" title="Renombrar">✎</button><span class="direct-send-arrow">›</span></div></div>`;
+    }
+    return `<div class="device-row" data-peer="${escapeHtml(d.peerId)}"><div class="device-icon real-device-icon">${deviceGlyph(d)}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${status}${last}</div></div><div class="device-actions"><button class="device-action rename-device" type="button" data-rename-peer="${escapeHtml(d.peerId)}" title="Renombrar">✎</button><button class="ellipsis remove-device device-action" type="button" data-remove-peer="${escapeHtml(d.peerId)}" title="Desvincular">•••</button></div></div>`;
+  }).join('');
 }
 function recentRows(){
   if(!recents.length)return `<div class="recent-row"><div class="recent-main"><strong>Sin actividad reciente</strong><small>Los textos enviados y recibidos aparecerán aquí.</small></div></div>`;
   return recents.slice(0,8).map(r=>`<div class="recent-row"><div class="recent-icon">${r.icon||'▧'}</div><div class="recent-main"><strong>${escapeHtml(r.title)}</strong><small>${escapeHtml(r.meta)}</small></div><span class="ellipsis">•••</span></div>`).join('');
 }
 function renderDevices(){
-  const rows=deviceRows(); ['#mobileDeviceList','#desktopDeviceList'].forEach(sel=>{const e=$(sel);if(e)e.innerHTML=rows});
+  const mobile=$('#mobileDeviceList');if(mobile)mobile.innerHTML=deviceRows(true);
+  const desktop=$('#desktopDeviceList');if(desktop)desktop.innerHTML=deviceRows(false);
   const online=devices.filter(d=>d.online).length;if($('#onlineCount'))$('#onlineCount').textContent=online;
-  const send=$('#sendDeviceList');if(send)send.innerHTML=devices.length?devices.map(d=>`<label class="select-device ${d.online?'':'is-offline'}"><input type="checkbox" value="${escapeHtml(d.peerId)}" ${d.online?'':'disabled'}><div class="device-icon">${icons[d.type]||'▱'}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}</div></div></label>`).join(''):`<div class="empty-state"><strong>Primero vincula otro equipo</strong><small>Ambos dispositivos deben tener TRANSFER abierto durante la primera vinculación.</small></div>`;
+  const send=$('#sendDeviceList');
+  if(send)send.innerHTML=devices.length?devices.map(d=>`<label class="select-device ${d.online?'':'is-offline'}"><input type="checkbox" value="${escapeHtml(d.peerId)}" ${d.online?'':'disabled'}><div class="device-icon real-device-icon">${deviceGlyph(d)}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}</div></div></label>`).join(''):`<div class="empty-state"><strong>Primero vincula otro equipo</strong><small>Ambos dispositivos deben tener TRANSFER abierto durante la primera vinculación.</small></div>`;
   updateNetworkBadge();
 }
-function renderRecents(){const rr=recentRows();['#mobileRecentList','#desktopRecentList'].forEach(sel=>{const e=$(sel);if(e)e.innerHTML=rr})}
+let mobileRecentsExpanded=false;
+function renderRecents(){
+  const rr=recentRows();
+  const mobile=$('#mobileRecentList');if(mobile){mobile.innerHTML=rr;mobile.hidden=!mobileRecentsExpanded}
+  const desktop=$('#desktopRecentList');if(desktop)desktop.innerHTML=rr;
+  const toggle=$('#mobileRecentToggleBtn');if(toggle)toggle.textContent=mobileRecentsExpanded?'⌃':'⌄';
+}
 function updateClipboardUI(){
-  const preview=clipboardText||'Toca “Pegar” para leer tu portapapeles.';
+  const preview=clipboardPreviewText(clipboardText);
   if($('#clipboardPreview'))$('#clipboardPreview').textContent=preview;
-  if($('#desktopClipboardPreview'))$('#desktopClipboardPreview').textContent=preview;
-  if($('#clipboardTitle'))$('#clipboardTitle').textContent=clipboardText?'Texto sincronizado listo para pegar':'Texto listo para compartir';
-  if($('#clipboardMeta')){
-    const nativeAndroid=detectPlatform()==='android' && androidNativeBridgeAvailable();
-    $('#clipboardMeta').textContent=nativeAndroid?'Portapapeles Android automático':(clipboardText?'Guardado en TRANSFER':'Sin texto sincronizado');
-  }
+  if($('#desktopClipboardPreview'))$('#desktopClipboardPreview').textContent=clipboardText||'Esperando portapapeles…';
+  if($('#clipboardTitle'))$('#clipboardTitle').textContent='Texto sincronizado';
+  if($('#clipboardMeta'))$('#clipboardMeta').textContent=clipboardText?'Toca la flecha para ver el texto completo':'Aún no hay texto sincronizado';
+  if($('#clipboardViewerText'))$('#clipboardViewerText').textContent=clipboardText||'Aún no hay texto sincronizado.';
 }
 function render(){renderDevices();renderRecents();updateClipboardUI();renderPairDialog()}
 
@@ -819,7 +847,7 @@ function startAndroidNativeIntegration(){
   });
 }
 
-function openSettings(){applyPlatform(localStorage.getItem('transfer.platform')||'auto');applyTheme(localStorage.getItem('transfer.theme')||'auto');$('#settingsDialog').showModal()}
+function openSettings(){applyTheme(localStorage.getItem('transfer.theme')==='dark'?'dark':'light');$('#settingsDialog').showModal()}
 ['#mobileSettingsBtn','#desktopSettingsBtn','#themeShortcut','#windowsThemeBtn'].forEach(sel=>{const el=$(sel);if(el)el.onclick=openSettings});
 $$('input[name="theme"]').forEach(r=>r.onchange=()=>applyTheme(r.value));
 $$('input[name="platform"]').forEach(r=>r.onchange=()=>applyPlatform(r.value));
@@ -855,8 +883,37 @@ const copyBtn=$('#copyBtn');if(copyBtn)copyBtn.onclick=async()=>{const text=clip
 const pasteBtn=$('#pasteBtn');if(pasteBtn)pasteBtn.onclick=()=>loadSystemClipboard({announce:true});
 const desktopPasteBtn=$('#desktopPasteBtn');if(desktopPasteBtn)desktopPasteBtn.onclick=()=>loadSystemClipboard({announce:true});
 
+function sendCurrentTextDirect(peerId){
+  const d=findDevice(peerId);
+  if(!d)return;
+  if(!d.online){toast(`${deviceLabel(d)} está desconectado`);return}
+  const text=String(clipboardText||'').trim();
+  if(!text){toast('No hay texto sincronizado para enviar');return}
+  const conn=connections.get(peerId);
+  if(!conn?.open){toast(`${deviceLabel(d)} no está conectado`);markOnline(peerId,false);return}
+  const msgId=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
+  try{
+    conn.send({type:'text',protocol:APP_PROTOCOL,id:msgId,text,sentAt:Date.now(),device:selfInfo()});
+    pendingAcks.set(msgId,{expected:1,ok:new Set(),at:Date.now()});
+    addRecent(text.length>48?text.slice(0,48)+'…':text,`Enviado a ${deviceLabel(d)} · ${nowLabel()}`,'≡',msgId);
+    toast(`Enviado a ${deviceLabel(d)} ✓`);
+  }catch{
+    toast('No se pudo enviar');
+    markOnline(peerId,false);
+  }
+}
+
+$('#mobileClipboardCard')?.addEventListener('click',e=>{
+  if(e.target.closest('#mobileClipboardOpenBtn') || e.target===e.currentTarget || e.target.closest('.hero-copy') || e.target.closest('.hero-icon')){
+    if($('#clipboardViewerText'))$('#clipboardViewerText').textContent=clipboardText||'Aún no hay texto sincronizado.';
+    $('#clipboardDialog')?.showModal();
+  }
+});
+$('#mobileClipboardCard')?.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('#clipboardDialog')?.showModal()}});
+$('#mobileRecentToggleBtn')?.addEventListener('click',()=>{mobileRecentsExpanded=!mobileRecentsExpanded;renderRecents()});
+
 function clearRecents(){recents=[];save();renderRecents();toast('Actividad reciente eliminada')}
-['#mobileClearRecentBtn','#desktopClearRecentBtn'].forEach(sel=>{const e=$(sel);if(e)e.onclick=clearRecents});
+['#desktopClearRecentBtn'].forEach(sel=>{const e=$(sel);if(e)e.onclick=clearRecents});
 
 let qrScanner=null;
 let qrScannerRunning=false;
@@ -1038,6 +1095,7 @@ $$('dialog.sheet').forEach(dialog=>{
 document.addEventListener('click',e=>{
   const rename=e.target.closest('[data-rename-peer]');
   if(rename){
+    e.stopPropagation();
     const d=findDevice(rename.dataset.renamePeer);if(!d)return;
     const value=prompt('Renombrar dispositivo\n\nDeja vacío para volver al nombre original.',deviceLabel(d));
     if(value===null)return;
@@ -1046,10 +1104,16 @@ document.addEventListener('click',e=>{
     else{delete d.alias;toast(`Nombre restaurado: ${d.name||'Dispositivo'}`)}
     save();renderDevices();return;
   }
-  const b=e.target.closest('[data-remove-peer]');if(!b)return;
-  const peerId=b.dataset.removePeer;const d=findDevice(peerId);if(!d)return;
-  if(!confirm(`¿Desvincular ${deviceLabel(d)}?`))return;
-  try{connections.get(peerId)?.close()}catch{};connections.delete(peerId);devices=devices.filter(x=>x.peerId!==peerId);save();renderDevices();toast('Dispositivo desvinculado');
+  const remove=e.target.closest('[data-remove-peer]');
+  if(remove){
+    e.stopPropagation();
+    const peerId=remove.dataset.removePeer;const d=findDevice(peerId);if(!d)return;
+    if(!confirm(`¿Desvincular ${deviceLabel(d)}?`))return;
+    try{connections.get(peerId)?.close()}catch{};connections.delete(peerId);devices=devices.filter(x=>x.peerId!==peerId);save();renderDevices();toast('Dispositivo desvinculado');
+    return;
+  }
+  const direct=e.target.closest('[data-send-peer]');
+  if(direct){sendCurrentTextDirect(direct.dataset.sendPeer);return}
 });
 
 const desktopFileBtn=$('#desktopFileBtn');if(desktopFileBtn)desktopFileBtn.onclick=()=>$('#desktopFileInput').click();
@@ -1179,171 +1243,3 @@ document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible')checkForAppUpdate({quiet:true});
 });
 setInterval(()=>checkForAppUpdate({quiet:true}),UPDATE_CHECK_MS);
-
-
-/* V3.9.0 - visual móvil simplificado */
-let mobileRecentsExpanded=false;
-
-function deviceNameV39(d){return String(d?.alias||d?.name||'Dispositivo')}
-function shortClipboardV39(text,max=72){
-  const t=String(text||'').trim();
-  if(!t)return 'Aún no hay texto sincronizado.';
-  return t.length>max ? t.slice(0,max)+'…' : t;
-}
-function deviceGlyphV39(d){
-  const hay=String(`${d?.alias||''} ${d?.name||''} ${d?.type||''}`).toLowerCase();
-  if(hay.includes('iphone') || d?.type==='iPhone') return '📱';
-  if(hay.includes('android') || d?.type==='Android') return '🤖';
-  if(hay.includes('imac')) return '🖥️';
-  if(hay.includes('macbook') || hay.includes('laptop')) return '💻';
-  if(d?.type==='Mac') return '💻';
-  if(hay.includes('windows') || d?.type==='Windows') return '🪟';
-  return '📲';
-}
-function ensureClipboardDialogV39(){
-  if($('#clipboardDialog'))return;
-  const dlg=document.createElement('dialog');
-  dlg.id='clipboardDialog';
-  dlg.className='sheet';
-  dlg.innerHTML=`
-    <form method="dialog" class="sheet-inner clipboard-full-sheet">
-      <div class="sheet-head">
-        <div><h2>Texto sincronizado</h2><p>Texto completo copiado en TRANSFER</p></div>
-        <button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button>
-      </div>
-      <div class="clipboard-full-box"><pre id="clipboardViewerText"></pre></div>
-    </form>`;
-  document.body.appendChild(dlg);
-  dlg.querySelector('[data-close-dialog]')?.addEventListener('click',()=>dlg.close('cancel'));
-  dlg.addEventListener('click',e=>{if(e.target===dlg && dlg.open)dlg.close('cancel')});
-}
-function syncClipboardDialogV39(){
-  const viewer=$('#clipboardViewerText');
-  if(viewer)viewer.textContent=clipboardText||'Aún no hay texto sincronizado.';
-}
-function openClipboardDialogV39(){
-  ensureClipboardDialogV39();
-  syncClipboardDialogV39();
-  $('#clipboardDialog')?.showModal();
-}
-function simplifySettingsV39(){
-  const title=$('#settingsDialog .sheet-head h2');
-  if(title)title.textContent='Apariencia';
-  const subtitle=$('#settingsDialog .sheet-head p');
-  if(subtitle)subtitle.textContent='Solo claro y oscuro';
-  $('#settingsDialog input[name="theme"][value="auto"]')?.closest('.appearance-row')?.remove();
-  ['.platform-heading','.platform-options','.platform-note','.preview-pair','#installBtn'].forEach(sel=>$(sel)?.remove());
-  const note=$('#settingsDialog .app-version-note');
-  if(note)note.textContent='TRANSFER 3.9.0 · Visual móvil simplificado';
-  const stored=localStorage.getItem('transfer.theme')||'light';
-  if(stored==='auto')applyTheme('light');
-}
-function simplifySendDialogV39(){
-  const p=$('#sendDialog .sheet-head p');
-  if(p)p.textContent='Escribe o pega el texto y envíalo';
-  $('.segment[data-kind="file"]')?.remove();
-  $('#fileAreaWrap')?.remove();
-  const segmented=$('.segmented');
-  const textSeg=$('.segment[data-kind="text"]');
-  if(textSeg)textSeg.classList.add('active');
-  if(segmented && segmented.children.length<=1)segmented.classList.add('single-segment');
-  const sub=$('#sendDialog .subheading');
-  if(sub)sub.textContent='Dispositivos disponibles';
-}
-function configureMobileUIV39(){
-  const hero=$('.hero-card');
-  if(hero){
-    hero.classList.add('clipboard-launcher');
-    hero.onclick=openClipboardDialogV39;
-    hero.setAttribute('role','button');
-    hero.tabIndex=0;
-    hero.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openClipboardDialogV39()}};
-  }
-  const icon=$('.hero-icon'); if(icon)icon.textContent='📄';
-  const chev=$('.hero-card .chev'); if(chev)chev.textContent='›';
-  $('#copyBtn')?.remove();
-  $('#pasteBtn')?.remove();
-  const quick=$('.quick-actions'); if(quick)quick.classList.add('quick-actions-solo');
-  const sendBtn=$('.quick-actions [data-open-send]');
-  if(sendBtn){sendBtn.innerHTML='➤ <span>Enviar</span>';sendBtn.classList.add('send-only-btn')}
-  const deviceTitle=$('#mobileDeviceList')?.closest('.section-block')?.querySelector('.section-title h2');
-  if(deviceTitle)deviceTitle.textContent='Dispositivos';
-  const recentTitle=$('#mobileRecentList')?.closest('.section-block')?.querySelector('.section-title h2');
-  if(recentTitle)recentTitle.textContent='Recientes';
-  const recentToggle=$('#mobileClearRecentBtn');
-  if(recentToggle){
-    recentToggle.textContent=mobileRecentsExpanded?'▾':'▸';
-    recentToggle.classList.add('recent-toggle-btn');
-    recentToggle.onclick=e=>{e.preventDefault();mobileRecentsExpanded=!mobileRecentsExpanded;renderRecents()};
-  }
-  const heroMeta=$('#clipboardMeta');
-  if(heroMeta && !clipboardText)heroMeta.textContent='Aún no hay texto sincronizado';
-  const appSubtitle=$('.mobile-topbar p');
-  if(appSubtitle)appSubtitle.textContent='Texto sincronizado';
-}
-async function sendDirectToPeerV39(peerId){
-  const d=findDevice(peerId);
-  const text=String(clipboardText||'').trim();
-  if(!text){toast('Primero copia un texto');return}
-  const conn=connections.get(peerId);
-  if(!d || !conn?.open){toast('Ese dispositivo no está conectado');renderDevices();return}
-  const msgId=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
-  try{
-    conn.send({type:'text',protocol:APP_PROTOCOL,id:msgId,text,sentAt:Date.now(),device:selfInfo()});
-    clipboardText=text;save();updateClipboardUI();
-    pendingAcks.set(msgId,{expected:1,ok:new Set(),at:Date.now()});
-    addRecent(shortClipboardV39(text,48),`Enviado a ${deviceNameV39(d)} · ${nowLabel()}`,'≡',msgId);
-    toast(`Enviado a ${deviceNameV39(d)} ✓`);
-  }catch{
-    toast('No se pudo enviar en este momento');
-    markOnline(peerId,false);
-  }
-}
-function deviceRows(){
-  if(!devices.length)return `<div class="empty-state"><strong>No hay dispositivos vinculados</strong><small>Toca “Agregar” y escanea el QR del otro equipo.</small></div>`;
-  return devices.map(d=>`<button class="device-row device-direct ${d.online?'':'is-offline'}" type="button" data-send-peer="${escapeHtml(d.peerId)}" ${d.online?'':'disabled'}><div class="device-icon real-icon">${deviceGlyphV39(d)}</div><div class="device-main"><strong>${escapeHtml(deviceNameV39(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Sin conexión'}</div></div><span class="device-send-chip">${d.online?'Enviar':'Offline'}</span></button>`).join('');
-}
-function renderDevices(){
-  const rows=deviceRows();
-  ['#mobileDeviceList','#desktopDeviceList'].forEach(sel=>{const e=$(sel);if(e)e.innerHTML=rows});
-  const online=devices.filter(d=>d.online).length;
-  if($('#onlineCount'))$('#onlineCount').textContent=online;
-  const send=$('#sendDeviceList');
-  if(send)send.innerHTML=devices.length?devices.map(d=>`<label class="select-device ${d.online?'':'is-offline'}"><input type="checkbox" value="${escapeHtml(d.peerId)}" ${d.online?'':'disabled'}><div class="device-icon real-icon">${deviceGlyphV39(d)}</div><div class="device-main"><strong>${escapeHtml(deviceNameV39(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Sin conexión'}</div></div></label>`).join(''):`<div class="empty-state"><strong>Primero vincula otro equipo</strong><small>Ambos dispositivos deben tener TRANSFER abierto durante la primera vinculación.</small></div>`;
-  updateNetworkBadge();
-}
-function renderRecents(){
-  const rr=recentRows();
-  ['#mobileRecentList','#desktopRecentList'].forEach(sel=>{const e=$(sel);if(e)e.innerHTML=rr});
-  const btn=$('#mobileClearRecentBtn');
-  if(btn)btn.textContent=mobileRecentsExpanded?'▾':'▸';
-  const list=$('#mobileRecentList');
-  if(list)list.hidden=!mobileRecentsExpanded;
-}
-function updateClipboardUI(){
-  const preview=shortClipboardV39(clipboardText,72);
-  if($('#clipboardPreview'))$('#clipboardPreview').textContent=preview;
-  if($('#desktopClipboardPreview'))$('#desktopClipboardPreview').textContent=preview;
-  if($('#clipboardTitle'))$('#clipboardTitle').textContent='Texto sincronizado';
-  if($('#clipboardMeta'))$('#clipboardMeta').textContent=clipboardText?'Toca para abrir el texto completo':'Aún no hay texto sincronizado';
-  syncClipboardDialogV39();
-}
-document.addEventListener('click',e=>{
-  const direct=e.target.closest('[data-send-peer]');
-  if(direct){e.preventDefault();sendDirectToPeerV39(direct.dataset.sendPeer)}
-});
-window.addEventListener('load',()=>{
-  setTimeout(()=>{
-    simplifySettingsV39();
-    simplifySendDialogV39();
-    configureMobileUIV39();
-    renderDevices();
-    renderRecents();
-    updateClipboardUI();
-  },0);
-});
-document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState==='visible'){
-    setTimeout(()=>{simplifySettingsV39();simplifySendDialogV39();configureMobileUIV39();updateClipboardUI();renderRecents()},0);
-  }
-});

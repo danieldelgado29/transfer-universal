@@ -188,3 +188,24 @@ y al volver TRANSFER seguía conservando un DataChannel aparentemente abierto pe
 - Se elimina de la UI de envío la opción de Archivo porque todavía no funciona.
 - No modifica QR, portapapeles de Mac/Android, P2P ni servicio en segundo plano.
 - No requiere reinstalar la PWA ni el APK Android V1.3.
+
+
+## V3.9.1 - Rediseño móvil real
+
+Corrige V3.9.0: el bloque tardío redefinía `renderRecents()` y accedía a
+`mobileRecentsExpanded` antes de que el `let` hubiera sido inicializado. La ejecución
+se detenía durante `render()`: `renderDevices()` alcanzaba a mostrar los iconos nuevos,
+pero el resto del rediseño no llegaba a ejecutarse.
+
+V3.9.1 elimina ese bloque y lleva los cambios visuales al HTML/JS principal:
+- Ajustes: solo Claro y Oscuro.
+- Tarjeta principal: Texto sincronizado + hoja + preview + flecha.
+- La tarjeta abre una hoja con el texto completo.
+- Copiar/Pegar desaparecen de Inicio móvil.
+- Enviar queda como único botón principal y conserva la ventana de envío.
+- Cada dispositivo móvil es un botón de envío directo del texto actual.
+- Estado verde/gris según conexión.
+- Renombrar dispositivo se conserva.
+- Recientes empieza plegado y se abre/cierra con flecha.
+- Enviar archivo sigue pendiente; no se presenta como corregido.
+- QR, tokens, P2P, Android background y Mac Bridge no se modifican.
