@@ -5,7 +5,9 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.9.3';
+const FILE_CHUNK_SIZE = 64 * 1024;
+const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB en esta primera versión P2P.
+const APP_VERSION = '3.10.0';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -57,6 +59,9 @@ const pendingPair = new Map(); // peerId -> DataConnection
 const inboundPair = new Map(); // peerId -> sesión de vinculación entrante pendiente de confirmación
 const pairingSessions = new Map(); // peerId -> sesión saliente con reintentos automáticos
 const pendingAcks = new Map();
+const incomingFiles = new Map(); // remoteId:fileId -> transferencia entrante
+const receivedFiles = new Map(); // fileId -> {file,url,name,size,mime,sender}
+const pendingFileAcks = new Map();
 
 function save(){
   localStorage.setItem('transfer.self',JSON.stringify(selfDevice));
@@ -66,6 +71,218 @@ function save(){
 }
 function toast(msg){const t=$('#toast');if(!t)return;t.textContent=msg;t.classList.add('show');clearTimeout(t._timer);t._timer=setTimeout(()=>t.classList.remove('show'),2400)}
 function addRecent(title,meta,icon='≡',id=null){recents.unshift({id:id||crypto.randomUUID?.()||String(Date.now()),title,meta,icon,at:Date.now()});recents=recents.slice(0,MAX_RECENTS);save();renderRecents()}
+
+function formatBytes(bytes){
+  const n=Number(bytes)||0;
+  if(n<1024)return `${n} B`;
+  if(n<1024*1024)return `${(n/1024).toFixed(n<10*1024?1:0)} KB`;
+  if(n<1024*1024*1024)return `${(n/(1024*1024)).toFixed(n<10*1024*1024?1:0)} MB`;
+  return `${(n/(1024*1024*1024)).toFixed(1)} GB`;
+}
+function safeFileName(name){
+  const clean=String(name||'archivo')
+    .replace(/[\\/:*?"<>|\u0000-\u001F]/g,'_')
+    .trim()
+    .slice(0,180);
+  return clean||'archivo';
+}
+function fileTransferKey(remoteId,id){return `${remoteId}:${id}`}
+function setFileSendStatus(text,progress=null){
+  const status=$('#fileSendStatus');if(status)status.textContent=text||'';
+  const bar=$('#fileSendProgress');
+  if(bar){
+    if(progress===null){bar.classList.add('hidden');bar.value=0}
+    else{bar.classList.remove('hidden');bar.value=Math.max(0,Math.min(100,progress))}
+  }
+}
+function pruneReceivedFiles(){
+  const entries=[...receivedFiles.entries()];
+  while(entries.length>8){
+    const [id,item]=entries.shift();
+    try{URL.revokeObjectURL(item.url)}catch{}
+    receivedFiles.delete(id);
+  }
+}
+function showReceivedFile(id){
+  const item=receivedFiles.get(id);
+  if(!item)return toast('Ese archivo ya no está disponible en esta sesión');
+  const name=$('#receivedFileName');if(name)name.textContent=item.name;
+  const meta=$('#receivedFileMeta');if(meta)meta.textContent=`${formatBytes(item.size)} · recibido de ${item.sender}`;
+  const dlg=$('#receivedFileDialog');
+  if(dlg){dlg.dataset.fileId=id;if(!dlg.open)dlg.showModal()}
+}
+function downloadReceivedFile(id){
+  const item=receivedFiles.get(id);
+  if(!item)return false;
+  try{
+    const a=document.createElement('a');
+    a.href=item.url;
+    a.download=item.name;
+    a.rel='noopener';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(()=>a.remove(),0);
+    return true;
+  }catch{return false}
+}
+async function saveOrShareReceivedFile(id){
+  const item=receivedFiles.get(id);
+  if(!item)return toast('Ese archivo ya no está disponible');
+  try{
+    if(item.file instanceof File && navigator.canShare?.({files:[item.file]}) && navigator.share){
+      await navigator.share({files:[item.file],title:item.name});
+      return;
+    }
+  }catch(err){
+    if(err?.name==='AbortError')return;
+  }
+  if(downloadReceivedFile(id))toast('Archivo guardado / descargado');
+  else{
+    try{window.open(item.url,'_blank','noopener')}catch{}
+  }
+}
+function arrayBufferFromMessageData(data){
+  if(data instanceof ArrayBuffer)return data;
+  if(ArrayBuffer.isView(data))return data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength);
+  return null;
+}
+function receiveFileStart(remoteId,d,msg){
+  const id=String(msg.id||'');
+  const size=Number(msg.size)||0;
+  const totalChunks=Number(msg.totalChunks)||0;
+  if(!id || size<0 || size>MAX_FILE_BYTES || totalChunks<1 || totalChunks>10000)return;
+  const key=fileTransferKey(remoteId,id);
+  incomingFiles.set(key,{
+    id,
+    remoteId,
+    name:safeFileName(msg.name),
+    size,
+    mime:String(msg.mime||'application/octet-stream').slice(0,160),
+    totalChunks,
+    chunks:new Array(totalChunks),
+    receivedChunks:0,
+    receivedBytes:0,
+    sender:deviceLabel(d),
+    startedAt:Date.now()
+  });
+  toast(`Recibiendo ${safeFileName(msg.name)}…`);
+}
+function receiveFileChunk(remoteId,msg){
+  const id=String(msg.id||'');
+  const key=fileTransferKey(remoteId,id);
+  const state=incomingFiles.get(key);
+  if(!state)return;
+  const index=Number(msg.index);
+  if(!Number.isInteger(index) || index<0 || index>=state.totalChunks || state.chunks[index])return;
+  const buf=arrayBufferFromMessageData(msg.data);
+  if(!buf)return;
+  state.chunks[index]=buf;
+  state.receivedChunks++;
+  state.receivedBytes+=buf.byteLength;
+}
+function finishIncomingFile(conn,remoteId,d,msg){
+  const id=String(msg.id||'');
+  const key=fileTransferKey(remoteId,id);
+  const state=incomingFiles.get(key);
+  if(!state)return;
+  if(state.receivedChunks!==state.totalChunks){
+    try{conn.send({type:'file-error',protocol:APP_PROTOCOL,id,message:'Archivo incompleto'})}catch{}
+    incomingFiles.delete(key);
+    toast(`No se completó ${state.name}`);
+    return;
+  }
+  const blob=new Blob(state.chunks,{type:state.mime});
+  let file;
+  try{file=new File([blob],state.name,{type:state.mime,lastModified:Date.now()})}
+  catch{file=blob}
+  const url=URL.createObjectURL(blob);
+  receivedFiles.set(id,{
+    id,file,url,
+    name:state.name,
+    size:blob.size,
+    mime:state.mime,
+    sender:state.sender,
+    receivedAt:Date.now()
+  });
+  pruneReceivedFiles();
+  incomingFiles.delete(key);
+
+  addRecent(state.name,`Archivo recibido de ${deviceLabel(d)} · ${formatBytes(blob.size)} · ${nowLabel()}`,'📎',id);
+  try{conn.send({type:'file-ack',protocol:APP_PROTOCOL,id,name:state.name,size:blob.size})}catch{}
+
+  const platform=detectPlatform();
+  if(platform==='mac'||platform==='windows'){
+    downloadReceivedFile(id);
+    toast(`Archivo recibido: ${state.name}`);
+  }else{
+    showReceivedFile(id);
+    toast(`Archivo recibido: ${state.name}`);
+  }
+}
+async function sendFileToPeers(file,peerIds){
+  if(!file)return toast('Selecciona un archivo');
+  if(file.size>MAX_FILE_BYTES)return toast(`Máximo ${formatBytes(MAX_FILE_BYTES)} por archivo`);
+  if(file.size===0)return toast('El archivo está vacío');
+
+  const active=peerIds.map(peerId=>({peerId,d:findDevice(peerId),conn:connections.get(peerId)}))
+    .filter(x=>x.d && x.conn?.open);
+
+  if(!active.length){
+    renderDevices();
+    return toast('Los dispositivos ya no están conectados');
+  }
+
+  const id=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
+  const totalChunks=Math.ceil(file.size/FILE_CHUNK_SIZE);
+  const name=safeFileName(file.name);
+  const mime=String(file.type||'application/octet-stream');
+
+  setFileSendStatus(`Preparando ${name}…`,0);
+
+  for(const {conn} of active){
+    conn.send({
+      type:'file-start',
+      protocol:APP_PROTOCOL,
+      id,name,size:file.size,mime,totalChunks,
+      sentAt:Date.now(),
+      device:selfInfo()
+    });
+  }
+
+  for(let index=0;index<totalChunks;index++){
+    const start=index*FILE_CHUNK_SIZE;
+    const end=Math.min(file.size,start+FILE_CHUNK_SIZE);
+    const data=await file.slice(start,end).arrayBuffer();
+
+    for(const {conn} of active){
+      if(conn.open)conn.send({type:'file-chunk',protocol:APP_PROTOCOL,id,index,data});
+    }
+
+    const progress=Math.round(((index+1)/totalChunks)*100);
+    setFileSendStatus(`Enviando ${name}… ${progress}%`,progress);
+
+    // Cede tiempo al DataChannel para evitar llenar el buffer con archivos grandes.
+    if(index%8===7)await new Promise(resolve=>setTimeout(resolve,8));
+  }
+
+  for(const {conn} of active){
+    if(conn.open)conn.send({type:'file-end',protocol:APP_PROTOCOL,id});
+  }
+
+  pendingFileAcks.set(id,{
+    expected:active.length,
+    ok:new Set(),
+    name,
+    at:Date.now()
+  });
+
+  const names=active.map(x=>deviceLabel(x.d));
+  addRecent(name,`Archivo enviado a ${names.join(', ')} · ${formatBytes(file.size)} · ${nowLabel()}`,'📎',id);
+  setFileSendStatus(`Enviado: ${name}`,100);
+  toast(`Archivo enviado a ${active.length} dispositivo${active.length===1?'':'s'} ✓`);
+  setTimeout(()=>setFileSendStatus('',null),1600);
+}
+
 function setNetworkBadge(state,text){
   ['#desktopNetworkBadge','#mobileNetworkBadge'].forEach(sel=>{const e=$(sel);if(!e)return;e.dataset.state=state;const sp=e.querySelector('span');if(sp)sp.textContent=text});
 }
@@ -581,6 +798,38 @@ function handleMessage(conn,msg){
     conn.send({type:'ack',id:msg.id,protocol:APP_PROTOCOL});
     return;
   }
+  if(msg.type==='file-start'){
+    const d=findDevice(remoteId);if(!d || connections.get(remoteId)!==conn)return;
+    receiveFileStart(remoteId,d,msg);
+    return;
+  }
+  if(msg.type==='file-chunk'){
+    const d=findDevice(remoteId);if(!d || connections.get(remoteId)!==conn)return;
+    receiveFileChunk(remoteId,msg);
+    return;
+  }
+  if(msg.type==='file-end'){
+    const d=findDevice(remoteId);if(!d || connections.get(remoteId)!==conn)return;
+    finishIncomingFile(conn,remoteId,d,msg);
+    return;
+  }
+  if(msg.type==='file-ack'){
+    const pending=pendingFileAcks.get(msg.id);
+    if(pending){
+      pending.ok.add(remoteId);
+      if(pending.ok.size>=pending.expected){
+        pendingFileAcks.delete(msg.id);
+        toast(`${pending.name} recibido en destino ✓`);
+      }
+    }
+    return;
+  }
+  if(msg.type==='file-error'){
+    const pending=pendingFileAcks.get(msg.id);
+    if(pending)pendingFileAcks.delete(msg.id);
+    toast(msg.message||'No se pudo completar el archivo');
+    return;
+  }
   if(msg.type==='ack'){
     const pending=pendingAcks.get(msg.id);if(pending){pending.ok.add(remoteId);if(pending.ok.size>=pending.expected){pendingAcks.delete(msg.id)}}return;
   }
@@ -857,13 +1106,26 @@ function openSend(prefillFile=null){
 $$('[data-open-send]').forEach(b=>b.onclick=()=>openSend());
 $$('.segment').forEach(btn=>btn.onclick=()=>{$$('.segment').forEach(x=>x.classList.toggle('active',x===btn));const file=btn.dataset.kind==='file';$('#fileAreaWrap').classList.toggle('hidden',!file);$('#textAreaWrap').classList.toggle('hidden',file)});
 $('#selectAll').onchange=e=>$$('#sendDeviceList input:not(:disabled)').forEach(c=>c.checked=e.target.checked);
+$('#fileInput')?.addEventListener('change',e=>{
+  const file=e.target.files?.[0];
+  const info=$('#fileSelectedInfo');
+  if(info)info.textContent=file?`${safeFileName(file.name)} · ${formatBytes(file.size)}`:'Ningún archivo seleccionado';
+  setFileSendStatus('',null);
+});
+
 
 $('#sendForm').addEventListener('submit',e=>{
   e.preventDefault();
   const selectedPeers=$$('#sendDeviceList input:checked').map(c=>c.value);
   if(!selectedPeers.length){toast('Selecciona al menos un dispositivo conectado');return}
   const isFile=$('.segment.active').dataset.kind==='file';
-  if(isFile){toast('Archivos P2P llegan en la siguiente etapa');return}
+  if(isFile){
+    const file=$('#fileInput')?.files?.[0];
+    if(!file){toast('Selecciona un archivo');return}
+    $('#sendDialog').close();
+    void sendFileToPeers(file,selectedPeers);
+    return;
+  }
   const text=$('#sendText').value.trim();if(!text){toast('Escribe o pega un texto');return}
   const msgId=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
   let sent=0;
@@ -1133,6 +1395,17 @@ $('#deviceDialog')?.addEventListener('close',()=>{
     for(const remoteId of [...pairingSessions.keys()])stopPairingSession(remoteId,{closeExtra:true});
     qrPairBusy=false;
   }
+});
+
+$('#receivedFileSaveBtn')?.addEventListener('click',()=>{
+  const id=$('#receivedFileDialog')?.dataset.fileId;
+  if(id)void saveOrShareReceivedFile(id);
+});
+$('#receivedFileOpenBtn')?.addEventListener('click',()=>{
+  const id=$('#receivedFileDialog')?.dataset.fileId;
+  const item=id?receivedFiles.get(id):null;
+  if(!item)return;
+  try{window.open(item.url,'_blank','noopener')}catch{downloadReceivedFile(id)}
 });
 
 // Cierre robusto de todas las ventanas modales. Los botones X nunca envían formularios.

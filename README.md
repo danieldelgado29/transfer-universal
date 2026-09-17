@@ -240,3 +240,19 @@ No borra vínculos, tokens ni preferencias.
 - Los errores de cámara ahora se muestran también dentro de la ventana de vinculación.
 - No borra vínculos, tokens ni preferencias.
 - No requiere reinstalar Android V1.3.
+
+
+## V3.10.0 - Archivos P2P
+
+TRANSFER ya puede enviar archivos reales entre dispositivos vinculados.
+
+- Transporte P2P por el mismo DataChannel autenticado.
+- Fragmentación en bloques de 64 KB.
+- Límite inicial: 100 MB por archivo.
+- Fotos, PDF, ZIP, audio, video y documentos.
+- Progreso de envío.
+- ACK de recepción.
+- En Mac/Windows intenta descargar automáticamente.
+- En Android/iPhone muestra Archivo recibido con Abrir y Guardar / compartir.
+- No sube los archivos a GitHub ni a Firebase.
+- No modifica el flujo de texto, QR, tokens o emparejamiento.

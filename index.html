@@ -132,12 +132,36 @@
       <div class="sheet-head"><div><h2>Enviar a…</h2><p>Selecciona uno o varios dispositivos</p></div><button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button></div>
       <div class="segmented"><button type="button" class="segment active" data-kind="text">Texto</button><button type="button" class="segment" data-kind="file">Archivo</button></div>
       <label class="content-card" id="textAreaWrap"><span>Contenido</span><textarea id="sendText" rows="3" placeholder="Escribe o pega texto aquí"></textarea></label>
-      <label class="content-card hidden" id="fileAreaWrap"><span>Archivo</span><input type="file" id="fileInput" /></label>
+      <label class="content-card hidden file-picker-card" id="fileAreaWrap">
+        <span>Archivo</span>
+        <input type="file" id="fileInput" />
+        <small id="fileSelectedInfo">Ningún archivo seleccionado</small>
+        <progress id="fileSendProgress" class="file-progress hidden" max="100" value="0"></progress>
+        <small id="fileSendStatus"></small>
+      </label>
       <h3 class="subheading">Dispositivos disponibles</h3>
       <div id="sendDeviceList" class="select-list"></div>
       <label class="toggle-row"><div><strong>Enviar a todos</strong><small>Selecciona todos los equipos disponibles</small></div><input type="checkbox" id="selectAll" /></label>
       <button type="submit" value="default" class="primary-btn wide" id="sendNowBtn">➤ Enviar ahora</button>
     </form>
+  </dialog>
+
+  <dialog id="receivedFileDialog" class="sheet">
+    <div class="sheet-inner received-file-sheet">
+      <div class="sheet-head">
+        <div><h2>Archivo recibido</h2><p>TRANSFER P2P</p></div>
+        <button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button>
+      </div>
+      <div class="received-file-card">
+        <div class="received-file-icon">📎</div>
+        <strong id="receivedFileName">Archivo</strong>
+        <small id="receivedFileMeta"></small>
+      </div>
+      <div class="received-file-actions">
+        <button type="button" class="soft-btn wide" id="receivedFileOpenBtn">Abrir</button>
+        <button type="button" class="primary-btn wide" id="receivedFileSaveBtn">Guardar / compartir</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="settingsDialog" class="sheet">
@@ -147,7 +171,7 @@
         <label class="appearance-row"><span class="appearance-icon">☀</span><span><strong>Claro</strong><small>Interfaz clara</small></span><input type="radio" name="theme" value="light"></label>
         <label class="appearance-row"><span class="appearance-icon">☾</span><span><strong>Oscuro</strong><small>Interfaz oscura</small></span><input type="radio" name="theme" value="dark"></label>
       </div>
-      <p class="app-version-note">TRANSFER 3.9.3</p>
+      <p class="app-version-note">TRANSFER 3.10.0</p>
     </form>
   </dialog>
 
