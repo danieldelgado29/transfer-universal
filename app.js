@@ -5,8 +5,8 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.5.0';
-const MAC_BRIDGE_URL = 'http://127.0.0.1:8765';
+const APP_VERSION = '3.6.0';
+const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
 const icons = {Mac:'▱',iPhone:'▯',Android:'♟',Windows:'⊞'};
@@ -242,9 +242,27 @@ function updateMacBridgeBadge(){
 }
 
 async function macBridgeFetch(path,options={}){
-  const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),550);
-  try{return await fetch(`${MAC_BRIDGE_URL}${path}`,{cache:'no-store',...options,signal:ctrl.signal})}
-  finally{clearTimeout(timer)}
+  let lastError=null;
+  for(const baseUrl of MAC_BRIDGE_URLS){
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),1600);
+    try{
+      const response=await fetch(`${baseUrl}${path}`,{
+        cache:'no-store',
+        mode:'cors',
+        credentials:'omit',
+        targetAddressSpace:'loopback',
+        ...options,
+        signal:ctrl.signal
+      });
+      clearTimeout(timer);
+      return response;
+    }catch(err){
+      clearTimeout(timer);
+      lastError=err;
+    }
+  }
+  throw lastError || new Error('Mac Bridge no disponible');
 }
 
 function autoSendClipboardToCrossPlatform(text){

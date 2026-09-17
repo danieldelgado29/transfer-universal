@@ -1,4 +1,4 @@
-# TRANSFER V3.5 — P2P TEXT + AUTO UPDATE + NATIVE WINDOW CHROME
+# TRANSFER V3.6 — P2P TEXT + AUTO UPDATE + NATIVE WINDOW CHROME
 
 Base independiente de TRANSFER.
 
@@ -56,7 +56,7 @@ Base independiente de TRANSFER.
 - Se conserva la actualización automática de V3.2 y todos los datos locales.
 
 
-## V3.5 — Bridge Mac
+## V3.6 — Bridge Mac HTTPS
 
 - Añade integración con el helper local `TRANSFER Mac Bridge` en `127.0.0.1:8765`.
 - El helper vigila el portapapeles real de macOS continuamente.
@@ -65,3 +65,12 @@ Base independiente de TRANSFER.
 - Los textos detectados en Mac se envían automáticamente a Android/Windows que estén conectados.
 - Se mantiene el botón Pegar en escritorio como respaldo manual.
 - El bridge guarda el último texto aunque la PWA esté cerrada; la sincronización P2P automática aún requiere TRANSFER abierta en esta etapa.
+
+
+### Corrección V3.6
+
+- El Bridge conserva HTTP en `127.0.0.1:8765` para diagnóstico y añade HTTPS en `127.0.0.1:8766`.
+- La PWA intenta primero HTTPS para evitar el bloqueo del WebKit/Safari al acceder desde GitHub Pages a un servicio HTTP local.
+- Se mantiene fallback HTTP para otros navegadores.
+- `fetch()` marca explícitamente el destino como `loopback` cuando el navegador soporta Local Network Access.
+- No se toca ningún componente EGP / Logic Bridge.

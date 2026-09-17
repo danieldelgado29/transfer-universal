@@ -1,4 +1,4 @@
-const CACHE='transfer-pwa-v3-5-mac-bridge';
+const CACHE='transfer-pwa-v3-6-mac-bridge-https';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./version.json','./icons/icon-192.png','./icons/icon-512.png'];
 
 async function putFresh(cache,url){
