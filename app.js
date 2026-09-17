@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.8.5';
+const APP_VERSION = '3.8.6';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -76,6 +76,7 @@ function updateNetworkBadge(){
   setNetworkBadge(n?'online':'ready',n?`${n} conectado${n===1?'':'s'}`:'P2P listo');
 }
 function findDevice(peerId){return devices.find(d=>d.peerId===peerId)}
+function deviceLabel(d){return String(d?.alias||d?.name||'Dispositivo')}
 function upsertDevice(info,token,online=true){
   if(!info?.peerId || info.peerId===selfDevice.peerId)return null;
   let d=findDevice(info.peerId);
@@ -106,7 +107,7 @@ applyTheme(localStorage.getItem('transfer.theme')||'auto');
 
 function deviceRows(){
   if(!devices.length)return `<div class="empty-state"><strong>No hay dispositivos vinculados</strong><small>Toca “Agregar” y escanea el QR del otro equipo.</small></div>`;
-  return devices.map(d=>`<div class="device-row" data-peer="${escapeHtml(d.peerId)}"><div class="device-icon">${icons[d.type]||'▱'}</div><div class="device-main"><strong>${escapeHtml(d.name)}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}${d.lastSeen&&!d.online?` · visto ${new Date(d.lastSeen).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:''}</div></div><button class="ellipsis remove-device" type="button" data-remove-peer="${escapeHtml(d.peerId)}" title="Opciones">•••</button></div>`).join('');
+  return devices.map(d=>`<div class="device-row" data-peer="${escapeHtml(d.peerId)}"><div class="device-icon">${icons[d.type]||'▱'}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}${d.lastSeen&&!d.online?` · visto ${new Date(d.lastSeen).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:''}</div></div><div class="device-actions"><button class="device-action rename-device" type="button" data-rename-peer="${escapeHtml(d.peerId)}" title="Renombrar">✎</button><button class="ellipsis remove-device device-action" type="button" data-remove-peer="${escapeHtml(d.peerId)}" title="Desvincular">•••</button></div></div>`).join('');
 }
 function recentRows(){
   if(!recents.length)return `<div class="recent-row"><div class="recent-main"><strong>Sin actividad reciente</strong><small>Los textos enviados y recibidos aparecerán aquí.</small></div></div>`;
@@ -115,7 +116,7 @@ function recentRows(){
 function renderDevices(){
   const rows=deviceRows(); ['#mobileDeviceList','#desktopDeviceList'].forEach(sel=>{const e=$(sel);if(e)e.innerHTML=rows});
   const online=devices.filter(d=>d.online).length;if($('#onlineCount'))$('#onlineCount').textContent=online;
-  const send=$('#sendDeviceList');if(send)send.innerHTML=devices.length?devices.map(d=>`<label class="select-device ${d.online?'':'is-offline'}"><input type="checkbox" value="${escapeHtml(d.peerId)}" ${d.online?'':'disabled'}><div class="device-icon">${icons[d.type]||'▱'}</div><div class="device-main"><strong>${escapeHtml(d.name)}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}</div></div></label>`).join(''):`<div class="empty-state"><strong>Primero vincula otro equipo</strong><small>Ambos dispositivos deben tener TRANSFER abierto durante la primera vinculación.</small></div>`;
+  const send=$('#sendDeviceList');if(send)send.innerHTML=devices.length?devices.map(d=>`<label class="select-device ${d.online?'':'is-offline'}"><input type="checkbox" value="${escapeHtml(d.peerId)}" ${d.online?'':'disabled'}><div class="device-icon">${icons[d.type]||'▱'}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}</div></div></label>`).join(''):`<div class="empty-state"><strong>Primero vincula otro equipo</strong><small>Ambos dispositivos deben tener TRANSFER abierto durante la primera vinculación.</small></div>`;
   updateNetworkBadge();
 }
 function renderRecents(){const rr=recentRows();['#mobileRecentList','#desktopRecentList'].forEach(sel=>{const e=$(sel);if(e)e.innerHTML=rr})}
@@ -844,7 +845,7 @@ $('#sendForm').addEventListener('submit',e=>{
   selectedPeers.forEach(peerId=>{const conn=connections.get(peerId);if(conn?.open){conn.send({type:'text',protocol:APP_PROTOCOL,id:msgId,text,sentAt:Date.now(),device:selfInfo()});sent++}});
   if(!sent){toast('Los dispositivos ya no están conectados');renderDevices();return}
   clipboardText=text;save();updateClipboardUI();
-  const names=selectedPeers.map(id=>findDevice(id)?.name||id);
+  const names=selectedPeers.map(id=>{const d=findDevice(id);return d?deviceLabel(d):id});
   addRecent(text.length>48?text.slice(0,48)+'…':text,`Enviado a ${names.join(', ')} · ${nowLabel()}`,'≡',msgId);
   pendingAcks.set(msgId,{expected:sent,ok:new Set(),at:Date.now()});
   $('#sendDialog').close();toast(`Texto enviado a ${sent} dispositivo${sent===1?'':'s'} ✓`);
@@ -1035,9 +1036,19 @@ $$('dialog.sheet').forEach(dialog=>{
 });
 
 document.addEventListener('click',e=>{
+  const rename=e.target.closest('[data-rename-peer]');
+  if(rename){
+    const d=findDevice(rename.dataset.renamePeer);if(!d)return;
+    const value=prompt('Renombrar dispositivo\n\nDeja vacío para volver al nombre original.',deviceLabel(d));
+    if(value===null)return;
+    const clean=String(value).trim().slice(0,40);
+    if(clean){d.alias=clean;toast(`Ahora se llama ${clean}`)}
+    else{delete d.alias;toast(`Nombre restaurado: ${d.name||'Dispositivo'}`)}
+    save();renderDevices();return;
+  }
   const b=e.target.closest('[data-remove-peer]');if(!b)return;
   const peerId=b.dataset.removePeer;const d=findDevice(peerId);if(!d)return;
-  if(!confirm(`¿Desvincular ${d.name}?`))return;
+  if(!confirm(`¿Desvincular ${deviceLabel(d)}?`))return;
   try{connections.get(peerId)?.close()}catch{};connections.delete(peerId);devices=devices.filter(x=>x.peerId!==peerId);save();renderDevices();toast('Dispositivo desvinculado');
 });
 

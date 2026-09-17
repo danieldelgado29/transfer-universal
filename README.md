@@ -164,3 +164,11 @@ y al volver TRANSFER seguía conservando un DataChannel aparentemente abierto pe
 - No modifica el flujo QR aprobado de V3.8.4.
 - No requiere reinstalar el APK Android V1.2.
 - No modifica EGP / Logic Bridge.
+
+
+## V3.8.6 - Renombrar dispositivos vinculados
+- Botón ✎ junto a cada dispositivo.
+- Alias local persistente; una reconexión no lo pisa.
+- Vaciar el nombre restaura el nombre original.
+- No modifica QR, tokens, P2P, background ni Mac Bridge.
+- No requiere reinstalar Android V1.3.
