@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.8.1';
+const APP_VERSION = '3.8.2';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -54,6 +54,7 @@ let peerReady = false;
 let networkError = '';
 const connections = new Map(); // peerId -> authenticated DataConnection
 const pendingPair = new Map(); // peerId -> DataConnection
+const inboundPair = new Map(); // peerId -> sesión de vinculación entrante pendiente de confirmación
 const pendingAcks = new Map();
 
 function save(){
@@ -181,20 +182,69 @@ function renderPairDialog(){
   renderPairQr();
 }
 
+function clearInboundPair(remoteId,conn=null){
+  const p=inboundPair.get(remoteId);
+  if(!p)return;
+  if(conn && p.conn!==conn)return;
+  if(p.timer)clearInterval(p.timer);
+  inboundPair.delete(remoteId);
+}
+
+function sendInboundPairAccepted(remoteId){
+  const p=inboundPair.get(remoteId);
+  if(!p || !p.conn?.open)return;
+  try{
+    p.conn.send({type:'pair-accepted',protocol:APP_PROTOCOL,token:p.token,device:selfInfo()});
+    p.tries=(p.tries||0)+1;
+  }catch{}
+  if(p.tries>=12){
+    if(p.timer)clearInterval(p.timer);
+    p.timer=null;
+  }
+}
+
+function stageInboundPair(conn,msg){
+  const remoteId=conn.peer;
+  let p=inboundPair.get(remoteId);
+  if(!p){
+    p={token:randomToken(),device:{...(msg.device||{}),peerId:remoteId},conn,tries:0,timer:null};
+    inboundPair.set(remoteId,p);
+  }else{
+    p.device={...(msg.device||p.device||{}),peerId:remoteId};
+    p.conn=conn;
+    p.tries=0;
+    if(p.timer)clearInterval(p.timer);
+  }
+  sendInboundPairAccepted(remoteId);
+  p.timer=setInterval(()=>sendInboundPairAccepted(remoteId),650);
+}
+
 function attachConnection(conn,{pairing=false,pin=''}={}){
   if(!conn)return;
   const remoteId=conn.peer;
   conn.on('open',()=>{
-    if(pairing){pendingPair.set(remoteId,conn);conn.send({type:'pair-request',protocol:APP_PROTOCOL,pin,device:selfInfo()})}
-    else{
+    if(pairing){
+      pendingPair.set(remoteId,conn);
+      conn.send({type:'pair-request',protocol:APP_PROTOCOL,pin,device:selfInfo()});
+    }else{
       const d=findDevice(remoteId);
       if(!d?.token){conn.close();return}
       conn.send({type:'hello',protocol:APP_PROTOCOL,token:d.token,device:selfInfo()});
     }
   });
   conn.on('data',msg=>handleMessage(conn,msg));
-  conn.on('close',()=>{if(connections.get(remoteId)===conn)connections.delete(remoteId);pendingPair.delete(remoteId);markOnline(remoteId,false)});
-  conn.on('error',()=>{if(connections.get(remoteId)===conn)connections.delete(remoteId);pendingPair.delete(remoteId);markOnline(remoteId,false)});
+  conn.on('close',()=>{
+    if(connections.get(remoteId)===conn)connections.delete(remoteId);
+    if(pendingPair.get(remoteId)===conn)pendingPair.delete(remoteId);
+    clearInboundPair(remoteId,conn);
+    markOnline(remoteId,false);
+  });
+  conn.on('error',()=>{
+    if(connections.get(remoteId)===conn)connections.delete(remoteId);
+    if(pendingPair.get(remoteId)===conn)pendingPair.delete(remoteId);
+    clearInboundPair(remoteId,conn);
+    markOnline(remoteId,false);
+  });
 }
 function authenticate(conn,device){connections.set(conn.peer,conn);upsertDevice(device,null,true);updateNetworkBadge()}
 function handleMessage(conn,msg){
@@ -203,22 +253,76 @@ function handleMessage(conn,msg){
   if(msg.protocol && msg.protocol!==APP_PROTOCOL){conn.send({type:'error',message:'Versión de protocolo incompatible'});return}
 
   if(msg.type==='pair-request'){
-    if(String(msg.pin)!==String(selfDevice.pin)){conn.send({type:'pair-rejected',message:'PIN incorrecto'});setTimeout(()=>conn.close(),250);return}
-    const token=randomToken();
-    const d=upsertDevice({...msg.device,peerId:remoteId},token,true);
-    connections.set(remoteId,conn);
-    conn.send({type:'pair-accepted',protocol:APP_PROTOCOL,token,device:selfInfo()});
-    selfDevice.pin=randomPin();save();renderPairDialog();renderDevices();
-    addRecent('Dispositivo vinculado',`${d?.name||remoteId} · ahora`,'⇄');
-    toast(`${d?.name||'Dispositivo'} vinculado ✓`);return;
+    if(String(msg.pin)!==String(selfDevice.pin)){
+      conn.send({type:'pair-rejected',message:'Código temporal incorrecto'});
+      setTimeout(()=>conn.close(),250);
+      return;
+    }
+    stageInboundPair(conn,msg);
+    return;
   }
+
   if(msg.type==='pair-accepted'){
+    if(!msg.token)return;
+    const previous=findDevice(remoteId);
+    const already=previous?.token===msg.token;
     const d=upsertDevice({...msg.device,peerId:remoteId},msg.token,true);
-    connections.set(remoteId,conn);pendingPair.delete(remoteId);
-    if($('#pairStatus'))$('#pairStatus').textContent=`Vinculado con ${d?.name||remoteId} ✓`;
-    addRecent('Dispositivo vinculado',`${d?.name||remoteId} · ahora`,'⇄');
-    toast('Dispositivo vinculado ✓');setTimeout(()=>$('#deviceDialog')?.close(),700);return;
+    connections.set(remoteId,conn);
+    pendingPair.delete(remoteId);
+
+    const confirm=()=>{
+      try{
+        if(conn.open)conn.send({
+          type:'pair-confirmed',
+          protocol:APP_PROTOCOL,
+          token:msg.token,
+          device:selfInfo()
+        });
+      }catch{}
+    };
+    confirm();
+    setTimeout(confirm,250);
+    setTimeout(confirm,750);
+
+    if($('#pairStatus'))$('#pairStatus').textContent=`Confirmando vínculo con ${d?.name||remoteId}…`;
+    if(!already)addRecent('Dispositivo vinculado',`${d?.name||remoteId} · ahora`,'⇄');
+    return;
   }
+
+  if(msg.type==='pair-confirmed'){
+    const p=inboundPair.get(remoteId);
+    if(!p || !msg.token || msg.token!==p.token)return;
+
+    if(p.timer)clearInterval(p.timer);
+    inboundPair.delete(remoteId);
+
+    const d=upsertDevice({...p.device,peerId:remoteId},p.token,true);
+    connections.set(remoteId,conn);
+
+    selfDevice.pin=randomPin();
+    save();
+    renderPairDialog();
+    renderDevices();
+
+    try{conn.send({type:'pair-complete',protocol:APP_PROTOCOL,token:p.token,device:selfInfo()})}catch{}
+    setTimeout(()=>{try{if(conn.open)conn.send({type:'pair-complete',protocol:APP_PROTOCOL,token:p.token,device:selfInfo()})}catch{}},300);
+
+    addRecent('Dispositivo vinculado',`${d?.name||remoteId} · ahora`,'⇄');
+    toast(`${d?.name||'Dispositivo'} vinculado ✓`);
+    return;
+  }
+
+  if(msg.type==='pair-complete'){
+    const d=findDevice(remoteId);
+    if(!d || !msg.token || d.token!==msg.token)return;
+    connections.set(remoteId,conn);
+    markOnline(remoteId,true);
+    if($('#pairStatus'))$('#pairStatus').textContent=`Vinculado con ${d.name||remoteId} ✓`;
+    toast('Dispositivo vinculado ✓');
+    setTimeout(()=>$('#deviceDialog')?.close(),500);
+    return;
+  }
+
   if(msg.type==='pair-rejected'){
     pendingPair.delete(remoteId);if($('#pairStatus'))$('#pairStatus').textContent=msg.message||'No se pudo vincular';toast(msg.message||'Vinculación rechazada');return;
   }
@@ -510,6 +614,7 @@ function clearRecents(){recents=[];save();renderRecents();toast('Actividad recie
 
 let qrScanner=null;
 let qrScannerRunning=false;
+let qrPairBusy=false;
 
 async function stopQrScanner(){
   if(!qrScanner)return;
@@ -538,6 +643,7 @@ async function pairWithCredentials(remoteId,pin,{fromQr=false}={}){
     attachConnection(conn,{pairing:true,pin});
     setTimeout(()=>{
       if(!findDevice(remoteId) && $('#deviceDialog')?.open && $('#pairStatus')){
+        qrPairBusy=false;
         $('#pairStatus').textContent='Aún no responde. Deja TRANSFER abierto en ambos dispositivos e inténtalo otra vez.';
       }
     },7000);
@@ -549,16 +655,21 @@ async function pairWithCredentials(remoteId,pin,{fromQr=false}={}){
 }
 
 async function handleScannedPairQr(decodedText){
+  if(qrPairBusy)return;
+  qrPairBusy=true;
   try{
     const data=parsePairQrPayload(decodedText);
     await stopQrScanner();
-    await pairWithCredentials(data.peerId,data.pin,{fromQr:true});
+    const started=await pairWithCredentials(data.peerId,data.pin,{fromQr:true});
+    if(!started)qrPairBusy=false;
   }catch(err){
+    qrPairBusy=false;
     toast(err?.message||'QR no válido');
   }
 }
 
 async function startQrScanner(){
+  qrPairBusy=false;
   if(typeof Html5Qrcode==='undefined'){
     toast('El lector QR no está disponible');
     return;

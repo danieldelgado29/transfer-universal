@@ -105,3 +105,17 @@ Base independiente de TRANSFER.
 - No cambia el protocolo de vinculación.
 - No requiere reconstruir el APK Android V1.2.
 - No modifica EGP / Logic Bridge.
+
+
+## V3.8.2 - Vinculación QR bilateral y confiable
+
+Corrige el caso donde el Mac podía guardar al Android pero el Android no alcanzaba a guardar al Mac.
+
+Flujo nuevo: `pair-request -> pair-accepted (reintentos) -> pair-confirmed -> pair-complete`.
+
+- `pair-accepted` se reenvía automáticamente hasta recibir confirmación.
+- El PIN/QR no cambia hasta que ambos lados confirmaron.
+- El lector QR ignora lecturas duplicadas mientras una vinculación está en curso.
+- La ventana solo muestra éxito cuando ambos dispositivos completaron el intercambio.
+- No requiere reconstruir ni reinstalar Android nativo V1.2.
+- No modifica EGP / Logic Bridge.
