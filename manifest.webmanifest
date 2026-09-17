@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f5f7fb",
   "theme_color": "#1682ff",
-  "description": "TRANSFER V3.7: portapapeles Android nativo, Mac Bridge HTTPS, texto P2P y autoactualización.",
+  "description": "TRANSFER V3.8: vinculación por QR, Android nativo, Mac Bridge y texto P2P.",
   "icons": [
     {
       "src": "icons/icon-192.png",

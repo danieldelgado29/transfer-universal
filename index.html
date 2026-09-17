@@ -157,36 +157,58 @@
 
       <div class="preview-pair"><div class="mini-preview light-preview"><b>TRANSFER</b><span></span><span></span><i></i></div><div class="mini-preview dark-preview"><b>TRANSFER</b><span></span><span></span><i></i></div></div>
       <button type="button" class="soft-btn wide" id="installBtn">＋ Instalar PWA</button>
-      <p class="app-version-note">TRANSFER 3.7 · Android nativo + Mac Bridge</p>
+      <p class="app-version-note">TRANSFER 3.8 · Vinculación QR</p>
     </form>
   </dialog>
 
-  <dialog id="deviceDialog" class="sheet">
+  <dialog id="deviceDialog" class="sheet pair-dialog">
     <form method="dialog" class="sheet-inner" id="deviceForm">
-      <div class="sheet-head"><div><h2>Vincular dispositivo</h2><p>Conexión directa P2P entre tus equipos</p></div><button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button></div>
+      <div class="sheet-head"><div><h2>Vincular dispositivo</h2><p>Escanea un QR y queda vinculado automáticamente</p></div><button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button></div>
 
-      <section class="pair-section">
-        <div class="pair-section-head"><div><h3>Este dispositivo</h3><p>Deja TRANSFER abierto durante la primera vinculación.</p></div><span class="live-dot" id="peerLiveDot"></span></div>
-        <label class="content-card"><span>Nombre</span><input id="selfDeviceName" autocomplete="off" placeholder="Ej. MacBook iSupport"></label>
-        <div class="pair-grid">
-          <div class="pair-value"><small>ID de conexión</small><strong id="selfPeerId">Preparando…</strong><button type="button" class="pair-copy-btn" id="copySelfIdBtn" aria-label="Copiar ID de conexión">⧉ Copiar ID</button></div>
-          <div class="pair-value"><small>PIN temporal</small><strong id="selfPairPin">------</strong><button type="button" class="pair-copy-btn" id="copySelfPinBtn" aria-label="Copiar PIN temporal">⧉ Copiar PIN</button></div>
+      <div class="pair-ready-line"><span class="live-dot" id="peerLiveDot"></span><span>TRANSFER listo para vincular</span></div>
+
+      <section class="qr-pair-layout">
+        <div class="qr-pair-card">
+          <div class="qr-pair-title"><span>▦</span><div><h3>Mi QR</h3><p>Muéstralo al otro dispositivo</p></div></div>
+          <div class="pair-qr-box" id="pairQr"><div class="pair-qr-wait">Preparando QR…</div></div>
+          <p class="pair-qr-hint" id="pairQrHint">Preparando código de vinculación…</p>
+          <button type="button" class="soft-btn wide" id="refreshQrBtn">↻ Generar nuevo QR</button>
         </div>
-        <div class="pair-actions"><button type="button" class="soft-btn" id="rotatePinBtn">↻ Nuevo PIN</button></div>
+
+        <div class="qr-pair-card scan-card">
+          <div class="qr-pair-title"><span>⌁</span><div><h3>Escanear QR</h3><p>Abre la cámara dentro de TRANSFER</p></div></div>
+          <div class="camera-illustration">▣</div>
+          <button type="button" class="primary-btn wide camera-open-btn" id="openScannerBtn">📷 Abrir cámara</button>
+          <div id="qrScannerPanel" class="qr-scanner-panel hidden">
+            <div id="qrReader"></div>
+            <button type="button" class="soft-btn wide" id="closeScannerBtn">Cerrar cámara</button>
+          </div>
+          <p class="pair-status" id="pairStatus">Muestra tu QR o escanea el del otro dispositivo.</p>
+        </div>
       </section>
 
-      <section class="pair-section">
-        <div class="pair-section-head"><div><h3>Vincular otro dispositivo</h3><p>Escribe el ID y PIN que aparecen en el otro equipo.</p></div></div>
-        <label class="content-card"><span>ID del otro dispositivo</span><input id="remotePeerId" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="tr-xxxxxxxxxxxx"></label>
-        <label class="content-card"><span>PIN temporal</span><input id="remotePairPin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
-        <p class="pair-status" id="pairStatus">Listo para vincular.</p>
-        <button class="primary-btn wide" type="submit" value="default" id="pairNowBtn">⇄ Vincular ahora</button>
-      </section>
+      <details class="manual-pair-details">
+        <summary>Vinculación manual avanzada</summary>
+        <section class="pair-section manual-pair-section">
+          <div class="pair-section-head"><div><h3>Este dispositivo</h3><p>Solo úsalo si la cámara no está disponible.</p></div></div>
+          <label class="content-card"><span>Nombre</span><input id="selfDeviceName" autocomplete="off" placeholder="Ej. MacBook iSupport"></label>
+          <div class="pair-grid">
+            <div class="pair-value"><small>ID de conexión</small><strong id="selfPeerId">Preparando…</strong><button type="button" class="pair-copy-btn" id="copySelfIdBtn">⧉ Copiar ID</button></div>
+            <div class="pair-value"><small>Código temporal</small><strong id="selfPairPin">------</strong><button type="button" class="pair-copy-btn" id="copySelfPinBtn">⧉ Copiar código</button></div>
+          </div>
+          <div class="pair-actions"><button type="button" class="soft-btn" id="rotatePinBtn">↻ Nuevo código</button></div>
+          <label class="content-card"><span>ID del otro dispositivo</span><input id="remotePeerId" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="tr-xxxxxxxxxxxx"></label>
+          <label class="content-card"><span>Código temporal</span><input id="remotePairPin" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456"></label>
+          <button class="primary-btn wide" type="submit" value="default" id="pairNowBtn">⇄ Vincular manualmente</button>
+        </section>
+      </details>
     </form>
   </dialog>
 
   <div class="toast" id="toast" role="status"></div>
   <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
+  <script src="vendor/html5-qrcode.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

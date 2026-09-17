@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.7.0';
+const APP_VERSION = '3.8.0';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -103,7 +103,7 @@ applyPlatform(localStorage.getItem('transfer.platform')||'auto');
 applyTheme(localStorage.getItem('transfer.theme')||'auto');
 
 function deviceRows(){
-  if(!devices.length)return `<div class="empty-state"><strong>No hay dispositivos vinculados</strong><small>Toca “Agregar” y usa el ID + PIN del otro equipo.</small></div>`;
+  if(!devices.length)return `<div class="empty-state"><strong>No hay dispositivos vinculados</strong><small>Toca “Agregar” y escanea el QR del otro equipo.</small></div>`;
   return devices.map(d=>`<div class="device-row" data-peer="${escapeHtml(d.peerId)}"><div class="device-icon">${icons[d.type]||'▱'}</div><div class="device-main"><strong>${escapeHtml(d.name)}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}${d.lastSeen&&!d.online?` · visto ${new Date(d.lastSeen).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`:''}</div></div><button class="ellipsis remove-device" type="button" data-remove-peer="${escapeHtml(d.peerId)}" title="Opciones">•••</button></div>`).join('');
 }
 function recentRows(){
@@ -130,11 +130,55 @@ function updateClipboardUI(){
 function render(){renderDevices();renderRecents();updateClipboardUI();renderPairDialog()}
 
 function selfInfo(){return {peerId:selfDevice.peerId,name:selfDevice.name,type:selfDevice.type}}
+function pairQrPayload(){
+  return `TRANSFER-PAIR|${APP_PROTOCOL}|${selfDevice.peerId}|${selfDevice.pin}`;
+}
+
+function parsePairQrPayload(raw){
+  const text=String(raw||'').trim();
+  const parts=text.split('|');
+  if(parts.length!==4 || parts[0]!=='TRANSFER-PAIR')throw new Error('Este QR no pertenece a TRANSFER');
+  const protocol=Number(parts[1]);
+  const peerId=normalizeRemoteId(parts[2]);
+  const pin=String(parts[3]||'').trim();
+  if(protocol!==APP_PROTOCOL)throw new Error('Versión de TRANSFER incompatible');
+  if(!/^tr-[a-z0-9-]{6,40}$/.test(peerId))throw new Error('QR de dispositivo inválido');
+  if(!/^\d{6}$/.test(pin))throw new Error('QR de vinculación inválido');
+  return {peerId,pin};
+}
+
+function renderPairQr(){
+  const box=$('#pairQr');
+  if(!box)return;
+  box.innerHTML='';
+  const hint=$('#pairQrHint');
+  if(!peerReady){
+    box.innerHTML='<div class="pair-qr-wait">Preparando QR…</div>';
+    if(hint)hint.textContent='Conectando TRANSFER…';
+    return;
+  }
+  if(typeof QRCode==='undefined'){
+    box.innerHTML='<div class="pair-qr-wait">QR no disponible</div>';
+    if(hint)hint.textContent='No se cargó el generador QR.';
+    return;
+  }
+  new QRCode(box,{
+    text:pairQrPayload(),
+    width:224,
+    height:224,
+    colorDark:'#000000',
+    colorLight:'#ffffff',
+    correctLevel:QRCode.CorrectLevel.M
+  });
+  if(hint)hint.textContent='Escanea este código desde TRANSFER en el otro dispositivo.';
+}
+
 function renderPairDialog(){
   if($('#selfDeviceName'))$('#selfDeviceName').value=selfDevice.name;
   if($('#selfPeerId'))$('#selfPeerId').textContent=selfDevice.peerId;
   if($('#selfPairPin'))$('#selfPairPin').textContent=selfDevice.pin;
   const dot=$('#peerLiveDot');if(dot)dot.classList.toggle('on',peerReady);
+  renderPairQr();
 }
 
 function attachConnection(conn,{pairing=false,pin=''}={}){
@@ -464,16 +508,120 @@ const desktopPasteBtn=$('#desktopPasteBtn');if(desktopPasteBtn)desktopPasteBtn.o
 function clearRecents(){recents=[];save();renderRecents();toast('Actividad reciente eliminada')}
 ['#mobileClearRecentBtn','#desktopClearRecentBtn'].forEach(sel=>{const e=$(sel);if(e)e.onclick=clearRecents});
 
-function openDeviceDialog(){renderPairDialog();if($('#pairStatus'))$('#pairStatus').textContent=peerReady?'P2P listo para vincular.':'Conectando al servicio P2P…';$('#remotePeerId').value='';$('#remotePairPin').value='';$('#deviceDialog').showModal()}
+let qrScanner=null;
+let qrScannerRunning=false;
+
+async function stopQrScanner(){
+  if(!qrScanner)return;
+  try{
+    if(qrScannerRunning)await qrScanner.stop();
+  }catch{}
+  try{await qrScanner.clear()}catch{}
+  qrScanner=null;
+  qrScannerRunning=false;
+  $('#qrScannerPanel')?.classList.add('hidden');
+  $('#openScannerBtn')?.classList.remove('hidden');
+}
+
+async function pairWithCredentials(remoteId,pin,{fromQr=false}={}){
+  if(!peerReady){toast('La red P2P todavía no está lista');return false}
+  remoteId=normalizeRemoteId(remoteId);
+  pin=String(pin||'').trim();
+  if(!/^tr-[a-z0-9-]{6,40}$/.test(remoteId)){toast('Dispositivo inválido');return false}
+  if(remoteId===selfDevice.peerId){toast('Ese QR pertenece a este mismo dispositivo');return false}
+  if(!/^\d{6}$/.test(pin)){toast('Código de vinculación inválido');return false}
+  if($('#remotePeerId'))$('#remotePeerId').value=remoteId;
+  if($('#remotePairPin'))$('#remotePairPin').value=pin;
+  if($('#pairStatus'))$('#pairStatus').textContent=fromQr?'QR leído. Vinculando automáticamente…':'Conectando con el otro dispositivo…';
+  try{
+    const conn=peer.connect(remoteId,{reliable:true,metadata:{app:'TRANSFER',protocol:APP_PROTOCOL,pairing:true}});
+    attachConnection(conn,{pairing:true,pin});
+    setTimeout(()=>{
+      if(!findDevice(remoteId) && $('#deviceDialog')?.open && $('#pairStatus')){
+        $('#pairStatus').textContent='Aún no responde. Deja TRANSFER abierto en ambos dispositivos e inténtalo otra vez.';
+      }
+    },7000);
+    return true;
+  }catch{
+    if($('#pairStatus'))$('#pairStatus').textContent='No se pudo iniciar la conexión.';
+    return false;
+  }
+}
+
+async function handleScannedPairQr(decodedText){
+  try{
+    const data=parsePairQrPayload(decodedText);
+    await stopQrScanner();
+    await pairWithCredentials(data.peerId,data.pin,{fromQr:true});
+  }catch(err){
+    toast(err?.message||'QR no válido');
+  }
+}
+
+async function startQrScanner(){
+  if(typeof Html5Qrcode==='undefined'){
+    toast('El lector QR no está disponible');
+    return;
+  }
+  if(!peerReady){
+    toast('Espera a que TRANSFER termine de conectar');
+    return;
+  }
+  const panel=$('#qrScannerPanel');
+  const button=$('#openScannerBtn');
+  panel?.classList.remove('hidden');
+  button?.classList.add('hidden');
+  if($('#pairStatus'))$('#pairStatus').textContent='Abriendo cámara…';
+
+  try{
+    const cameras=await Html5Qrcode.getCameras();
+    if(!cameras?.length)throw new Error('No se encontró ninguna cámara');
+
+    const mobile=detectPlatform()==='android'||detectPlatform()==='ios';
+    let selected=cameras[0];
+    if(mobile){
+      selected=cameras.find(c=>/back|rear|environment|trasera|posterior/i.test(c.label)) || cameras[cameras.length-1];
+    }
+
+    qrScanner=new Html5Qrcode('qrReader');
+    await qrScanner.start(
+      selected.id,
+      {fps:10,qrbox:{width:250,height:250},aspectRatio:1},
+      text=>{void handleScannedPairQr(text)},
+      ()=>{}
+    );
+    qrScannerRunning=true;
+    if($('#pairStatus'))$('#pairStatus').textContent='Apunta la cámara al QR del otro dispositivo.';
+  }catch(err){
+    await stopQrScanner();
+    if($('#pairStatus'))$('#pairStatus').textContent='No se pudo abrir la cámara.';
+    toast(err?.message||'No se pudo abrir la cámara');
+  }
+}
+
+function openDeviceDialog(){
+  void stopQrScanner();
+  renderPairDialog();
+  if($('#pairStatus'))$('#pairStatus').textContent=peerReady?'Muestra tu QR o escanea el del otro dispositivo.':'Conectando al servicio P2P…';
+  if($('#remotePeerId'))$('#remotePeerId').value='';
+  if($('#remotePairPin'))$('#remotePairPin').value='';
+  $('#deviceDialog').showModal();
+  setTimeout(renderPairQr,60);
+}
+
 ['#mobileAddDeviceBtn','#desktopAddDeviceBtn'].forEach(sel=>{const e=$(sel);if(e)e.onclick=openDeviceDialog});
-$('#selfDeviceName')?.addEventListener('change',e=>{const v=e.target.value.trim();if(v){selfDevice.name=v;save();reconnectAll();toast('Nombre actualizado')}});
-$('#rotatePinBtn')?.addEventListener('click',()=>{selfDevice.pin=randomPin();save();renderPairDialog();toast('PIN renovado')});
+$('#selfDeviceName')?.addEventListener('change',e=>{const v=e.target.value.trim();if(v){selfDevice.name=v;save();reconnectAll();renderPairQr();toast('Nombre actualizado')}});
+$('#rotatePinBtn')?.addEventListener('click',()=>{selfDevice.pin=randomPin();save();renderPairDialog();toast('Código renovado')});
+$('#refreshQrBtn')?.addEventListener('click',()=>{selfDevice.pin=randomPin();save();renderPairDialog();toast('Nuevo QR generado')});
+$('#openScannerBtn')?.addEventListener('click',()=>{void startQrScanner()});
+$('#closeScannerBtn')?.addEventListener('click',()=>{void stopQrScanner();if($('#pairStatus'))$('#pairStatus').textContent='Escáner cerrado.'});
+
 async function copyPlain(value,successLabel){
   try{await navigator.clipboard.writeText(String(value));toast(successLabel)}
   catch{toast(`No se pudo copiar automáticamente: ${value}`)}
 }
 $('#copySelfIdBtn')?.addEventListener('click',()=>copyPlain(selfDevice.peerId,'ID copiado ✓'));
-$('#copySelfPinBtn')?.addEventListener('click',()=>copyPlain(selfDevice.pin,'PIN copiado ✓'));
+$('#copySelfPinBtn')?.addEventListener('click',()=>copyPlain(selfDevice.pin,'Código copiado ✓'));
 
 function normalizeRemoteId(raw){
   const text=String(raw||'').trim().toLowerCase();
@@ -486,14 +634,9 @@ $('#remotePeerId')?.addEventListener('input',e=>{
 });
 $('#deviceForm').addEventListener('submit',e=>{
   e.preventDefault();
-  if(!peerReady){toast('La red P2P todavía no está lista');return}
-  const remoteId=normalizeRemoteId($('#remotePeerId').value);$('#remotePeerId').value=remoteId;const pin=$('#remotePairPin').value.trim();
-  if(!/^tr-[a-z0-9-]{6,40}$/.test(remoteId)){toast('ID de dispositivo inválido');return}
-  if(remoteId===selfDevice.peerId){toast('Ese es este mismo dispositivo');return}
-  if(!/^\d{6}$/.test(pin)){toast('El PIN debe tener 6 números');return}
-  $('#pairStatus').textContent='Conectando con el otro dispositivo…';
-  try{const conn=peer.connect(remoteId,{reliable:true,metadata:{app:'TRANSFER',protocol:APP_PROTOCOL,pairing:true}});attachConnection(conn,{pairing:true,pin});setTimeout(()=>{if(!findDevice(remoteId) && $('#deviceDialog').open)$('#pairStatus').textContent='Aún no responde. Revisa que el otro dispositivo tenga TRANSFER abierto y el PIN sea actual.'},7000)}catch{$('#pairStatus').textContent='No se pudo iniciar la conexión.'}
+  void pairWithCredentials($('#remotePeerId').value,$('#remotePairPin').value,{fromQr:false});
 });
+$('#deviceDialog')?.addEventListener('close',()=>{void stopQrScanner()});
 
 // Cierre robusto de todas las ventanas modales. Los botones X nunca envían formularios.
 $$('[data-close-dialog]').forEach(btn=>btn.addEventListener('click',()=>{

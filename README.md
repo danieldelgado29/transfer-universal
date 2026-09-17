@@ -84,3 +84,14 @@ Base independiente de TRANSFER.
 - Se evita el rebote del mismo texto al escribirlo desde TRANSFER al portapapeles Android.
 - La PWA normal conserva Copiar/Pegar como respaldo.
 - No se modifica ningún componente EGP / Logic Bridge.
+
+
+## V3.8 - Vinculación por QR
+
+- Todos los dispositivos muestran su propio QR de vinculación.
+- `Escanear QR` abre la cámara dentro de TRANSFER.
+- Al reconocer un QR válido, la vinculación P2P comienza automáticamente.
+- ID + código quedan ocultos en `Vinculación manual avanzada`.
+- El código del QR cambia después de una vinculación exitosa o al generar un QR nuevo.
+- Android nativo V1.2 añade permiso de cámara para el escáner interno.
+- No se modifica EGP / Logic Bridge.
