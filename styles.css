@@ -62,8 +62,8 @@ body[data-platform="windows"]{font-family:"Segoe UI",Arial,sans-serif}body[data-
 .qr-pair-title{display:flex;align-items:center;gap:11px;margin-bottom:14px}
 .qr-pair-title>span{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:var(--panel2);color:var(--blue);font-size:22px}
 .qr-pair-title h3,.qr-pair-title p{margin:0}.qr-pair-title h3{font-size:18px}.qr-pair-title p{color:var(--muted);font-size:12px;margin-top:3px}
-.pair-qr-box{width:252px;height:252px;max-width:100%;margin:8px auto 12px;padding:14px;border-radius:20px;background:#fff;display:grid;place-items:center;border:1px solid #dfe5ec}
-.pair-qr-box img,.pair-qr-box canvas{display:block!important;max-width:100%;height:auto!important}
+.pair-qr-box{width:252px;height:252px;max-width:100%;margin:8px auto 12px;padding:14px;border-radius:20px;background:#fff;display:grid;place-items:center;border:1px solid #dfe5ec;overflow:hidden}
+.pair-qr-box img,.pair-qr-box canvas{max-width:100%;height:auto!important}
 .pair-qr-wait{color:#667085;text-align:center;font-weight:700}
 .pair-qr-hint{min-height:38px;text-align:center;color:var(--muted);font-size:12px;line-height:1.45;margin:0 0 12px}
 .camera-illustration{height:170px;border:1.5px dashed color-mix(in srgb,var(--blue) 38%,var(--line));background:color-mix(in srgb,var(--panel2) 72%,transparent);border-radius:20px;display:grid;place-items:center;color:var(--blue);font-size:58px;margin:10px 0 14px}

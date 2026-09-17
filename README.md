@@ -95,3 +95,13 @@ Base independiente de TRANSFER.
 - El código del QR cambia después de una vinculación exitosa o al generar un QR nuevo.
 - Android nativo V1.2 añade permiso de cámara para el escáner interno.
 - No se modifica EGP / Logic Bridge.
+
+
+## V3.8.1 - Corrección visual QR
+
+- Corrige el QR duplicado/desbordado en la ventana de vinculación.
+- QRCodeJS vuelve a controlar correctamente si muestra `canvas` o `img`.
+- El QR queda contenido dentro de su tarjeta.
+- No cambia el protocolo de vinculación.
+- No requiere reconstruir el APK Android V1.2.
+- No modifica EGP / Logic Bridge.
