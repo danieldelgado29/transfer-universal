@@ -5,7 +5,7 @@ const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
 const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
-const APP_VERSION = '3.9.2';
+const APP_VERSION = '3.9.3';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -183,11 +183,6 @@ function renderPairQr(){
   if(!box)return;
   box.innerHTML='';
   const hint=$('#pairQrHint');
-  if(!peerReady){
-    box.innerHTML='<div class="pair-qr-wait">Preparando QR…</div>';
-    if(hint)hint.textContent='Conectando TRANSFER…';
-    return;
-  }
   if(typeof QRCode==='undefined'){
     box.innerHTML='<div class="pair-qr-wait">QR no disponible</div>';
     if(hint)hint.textContent='No se cargó el generador QR.';
@@ -201,7 +196,9 @@ function renderPairQr(){
     colorLight:'#ffffff',
     correctLevel:QRCode.CorrectLevel.M
   });
-  if(hint)hint.textContent='Escanea este código desde TRANSFER en el otro dispositivo.';
+  if(hint)hint.textContent=peerReady
+    ? 'Escanea este código desde TRANSFER en el otro dispositivo.'
+    : 'QR listo. TRANSFER está terminando de conectar; ya puedes escanearlo.';
 }
 
 function renderPairDialog(){
@@ -982,59 +979,114 @@ async function pairWithCredentials(remoteId,pin,{fromQr=false}={}){
   return true;
 }
 
+async function waitForPeerReady(timeoutMs=12000){
+  if(peerReady)return true;
+  const start=Date.now();
+  while(Date.now()-start<timeoutMs){
+    if(peerReady)return true;
+    if(peer?.disconnected){try{peer.reconnect()}catch{}}
+    await new Promise(resolve=>setTimeout(resolve,250));
+  }
+  return peerReady;
+}
+
 async function handleScannedPairQr(decodedText){
   if(qrPairBusy)return;
   qrPairBusy=true;
   try{
     const data=parsePairQrPayload(decodedText);
     await stopQrScanner();
+
+    if(!peerReady){
+      if($('#pairStatus'))$('#pairStatus').textContent='QR leído. Terminando de conectar TRANSFER…';
+      const ready=await waitForPeerReady();
+      if(!ready)throw new Error('TRANSFER todavía no logra conectar a la red P2P');
+    }
+
     const started=await pairWithCredentials(data.peerId,data.pin,{fromQr:true});
     if(!started)qrPairBusy=false;
   }catch(err){
     qrPairBusy=false;
+    if($('#pairStatus'))$('#pairStatus').textContent=err?.message||'No se pudo vincular.';
     toast(err?.message||'QR no válido');
   }
 }
 
 async function startQrScanner(){
   qrPairBusy=false;
+
   if(typeof Html5Qrcode==='undefined'){
     toast('El lector QR no está disponible');
+    if($('#pairStatus'))$('#pairStatus').textContent='No se cargó el lector QR.';
     return;
   }
-  if(!peerReady){
-    toast('Espera a que TRANSFER termine de conectar');
-    return;
-  }
+
   const panel=$('#qrScannerPanel');
   const button=$('#openScannerBtn');
+
   panel?.classList.remove('hidden');
   button?.classList.add('hidden');
+
   if($('#pairStatus'))$('#pairStatus').textContent='Abriendo cámara…';
 
-  try{
-    const cameras=await Html5Qrcode.getCameras();
-    if(!cameras?.length)throw new Error('No se encontró ninguna cámara');
+  const onScan=text=>{void handleScannedPairQr(text)};
+  const onScanError=()=>{};
+  const config={fps:10,qrbox:{width:250,height:250},aspectRatio:1};
 
+  try{
+    qrScanner=new Html5Qrcode('qrReader');
     const mobile=detectPlatform()==='android'||detectPlatform()==='ios';
-    let selected=cameras[0];
+
     if(mobile){
-      selected=cameras.find(c=>/back|rear|environment|trasera|posterior/i.test(c.label)) || cameras[cameras.length-1];
+      try{
+        await qrScanner.start(
+          {facingMode:'environment'},
+          config,
+          onScan,
+          onScanError
+        );
+      }catch(firstErr){
+        const cameras=await Html5Qrcode.getCameras();
+        if(!cameras?.length)throw firstErr;
+
+        const selected=
+          cameras.find(c=>/back|rear|environment|trasera|posterior/i.test(c.label))
+          || cameras[cameras.length-1];
+
+        await qrScanner.start(
+          selected.id,
+          config,
+          onScan,
+          onScanError
+        );
+      }
+    }else{
+      const cameras=await Html5Qrcode.getCameras();
+      if(!cameras?.length)throw new Error('No se encontró ninguna cámara');
+
+      await qrScanner.start(
+        cameras[0].id,
+        config,
+        onScan,
+        onScanError
+      );
     }
 
-    qrScanner=new Html5Qrcode('qrReader');
-    await qrScanner.start(
-      selected.id,
-      {fps:10,qrbox:{width:250,height:250},aspectRatio:1},
-      text=>{void handleScannedPairQr(text)},
-      ()=>{}
-    );
     qrScannerRunning=true;
-    if($('#pairStatus'))$('#pairStatus').textContent='Apunta la cámara al QR del otro dispositivo.';
+
+    if($('#pairStatus'))$('#pairStatus').textContent=peerReady
+      ? 'Apunta la cámara al QR del otro dispositivo.'
+      : 'Cámara lista. Escanea el QR mientras TRANSFER termina de conectar.';
   }catch(err){
     await stopQrScanner();
-    if($('#pairStatus'))$('#pairStatus').textContent='No se pudo abrir la cámara.';
-    toast(err?.message||'No se pudo abrir la cámara');
+
+    const detail=String(err?.message||err||'No se pudo abrir la cámara');
+
+    if($('#pairStatus')){
+      $('#pairStatus').textContent='No se pudo abrir la cámara: '+detail;
+    }
+
+    toast(detail);
   }
 }
 

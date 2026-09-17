@@ -228,3 +228,15 @@ Consecuencias visibles:
 
 V3.9.2 hace esa referencia opcional y deja continuar el arranque normal.
 No borra vínculos, tokens ni preferencias.
+
+
+## V3.9.3 - Reparar cámara + QR
+
+- La cámara ya no depende de que PeerJS haya terminado de conectar.
+- En Android/iPhone intenta abrir directamente la cámara trasera.
+- Si eso falla, busca las cámaras disponibles y usa la trasera como fallback.
+- El QR propio se genera aunque P2P todavía esté terminando de conectar.
+- Si se escanea antes de que P2P esté listo, TRANSFER espera automáticamente hasta 12 s.
+- Los errores de cámara ahora se muestran también dentro de la ventana de vinculación.
+- No borra vínculos, tokens ni preferencias.
+- No requiere reinstalar Android V1.3.
