@@ -93,3 +93,29 @@ body[data-platform="windows"]{font-family:"Segoe UI",Arial,sans-serif}body[data-
     order:-1;
   }
 }
+
+
+/* V3.9.0 - estilos visual móvil */
+.mobile-app .hero-card.clipboard-launcher{cursor:pointer}
+.mobile-app .hero-card.clipboard-launcher:active{transform:scale(.99)}
+.mobile-app .quick-actions.quick-actions-solo{grid-template-columns:1fr}
+.mobile-app .quick-actions.quick-actions-solo .primary-btn{width:100%;padding:16px 14px;border-radius:18px}
+.mobile-app .device-row.device-direct{width:100%;border:0;background:transparent;text-align:left;cursor:pointer}
+.mobile-app .device-row.device-direct:active{background:var(--panel2)}
+.mobile-app .device-row.device-direct:disabled{opacity:.7;cursor:default}
+.real-icon{font-size:26px}
+.device-send-chip{padding:8px 12px;border-radius:999px;background:color-mix(in srgb,var(--blue) 12%,transparent);color:var(--blue);font-size:12px;font-weight:800;letter-spacing:.01em;flex:none}
+.device-row.is-offline .device-send-chip{background:var(--panel2);color:var(--muted)}
+.recent-toggle-btn{font-size:24px;padding:6px 10px;border-radius:10px}
+#mobileRecentList[hidden]{display:none !important}
+.clipboard-full-sheet .sheet-head h2{font-size:24px}
+.clipboard-full-box{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:16px}
+.clipboard-full-box pre{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit;line-height:1.45}
+.single-segment{grid-template-columns:1fr}
+.single-segment .segment{pointer-events:none}
+@media(max-width:540px){
+  .mobile-topbar h1{font-size:30px}
+  .mobile-app .hero-card{padding:18px}
+  .mobile-app .hero-copy strong{font-size:18px}
+  .mobile-app .device-icon{width:46px;height:46px;border-radius:15px}
+}

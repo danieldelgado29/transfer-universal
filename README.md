@@ -172,3 +172,19 @@ y al volver TRANSFER seguía conservando un DataChannel aparentemente abierto pe
 - Vaciar el nombre restaura el nombre original.
 - No modifica QR, tokens, P2P, background ni Mac Bridge.
 - No requiere reinstalar Android V1.3.
+
+
+## V3.9.0 - Rediseño visual teléfonos
+
+- Configuración simplificada: solo Claro y Oscuro.
+- Pantalla principal móvil enfocada en “Texto sincronizado”.
+- Icono de hoja y apertura del texto completo al tocar la tarjeta principal.
+- Se eliminan los botones Copiar y Pegar de la pantalla principal móvil.
+- El botón Enviar sigue abriendo la ventana de envío de texto.
+- En Dispositivos, cada fila ahora es un botón de envío directo del texto actual.
+- Los dispositivos muestran iconos visuales diferenciados (MacBook, iPhone, iMac, Android, Windows).
+- El estado usa punto verde conectado / gris sin conexión.
+- Recientes ahora se despliega con una flecha.
+- Se elimina de la UI de envío la opción de Archivo porque todavía no funciona.
+- No modifica QR, portapapeles de Mac/Android, P2P ni servicio en segundo plano.
+- No requiere reinstalar la PWA ni el APK Android V1.3.
