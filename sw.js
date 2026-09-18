@@ -1,4 +1,4 @@
-const CACHE='transfer-pwa-v3-10-2-direct-device-send';
+const CACHE='transfer-pwa-v3-10-3-stable-peer';
 const ASSETS=['./','./index.html','./styles.css','./app.js','./manifest.webmanifest','./version.json','./icons/icon-192.png','./icons/icon-512.png','./vendor/qrcode.min.js','./vendor/html5-qrcode.min.js'];
 
 async function putFresh(cache,url){

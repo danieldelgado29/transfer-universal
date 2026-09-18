@@ -276,3 +276,15 @@ En la ventana Enviar:
 - cada dispositivo conectado es un botón;
 - tocar el dispositivo envía inmediatamente el texto o archivo seleccionado;
 - los dispositivos desconectados siguen visibles pero deshabilitados.
+
+
+## V3.10.3 - Conexión P2P estable
+
+- Reintentos cada 2.5 segundos.
+- El supervisor también trabaja cuando `peerReady` está falso.
+- Recupera PeerJS si el socket queda desconectado o cerrado.
+- iPhone/iPad reconstruyen WebRTC al regresar del segundo plano.
+- `unavailable-id` conserva el mismo peerId y reintenta; ya no rompe vínculos creando otra identidad.
+- Las DataConnection caídas se reintentan inmediatamente.
+- Ping/pong detecta conexiones aparentemente abiertas pero muertas.
+- Se conservan vínculos, tokens, archivos y envío directo V3.10.2.

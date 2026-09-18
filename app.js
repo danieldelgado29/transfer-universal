@@ -3,11 +3,11 @@ const $$ = s => [...document.querySelectorAll(s)];
 
 const APP_PROTOCOL = 3;
 const PEER_ID_PREFIX = 'tr-';
-const RECONNECT_MS = 12000;
+const RECONNECT_MS = 2500;
 const MAX_RECENTS = 32;
 const FILE_CHUNK_SIZE = 64 * 1024;
 const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB en esta primera versión P2P.
-const APP_VERSION = '3.10.2';
+const APP_VERSION = '3.10.3';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -62,6 +62,16 @@ const pendingAcks = new Map();
 const incomingFiles = new Map(); // remoteId:fileId -> transferencia entrante
 const receivedFiles = new Map(); // fileId -> {file,url,name,size,mime,sender}
 const pendingFileAcks = new Map();
+
+// V3.10.3 — supervisor de conexión.
+// Conserva SIEMPRE el peerId actual. iOS puede dejar una sesión WebRTC vieja
+// unos segundos al volver del segundo plano; eso no debe crear otra identidad.
+const connectAttemptAt = new Map();
+const peerLastAliveAt = new Map();
+let peerRestartTimer = null;
+let peerStartedAt = 0;
+let peerGeneration = 0;
+let lastHiddenAt = 0;
 
 function save(){
   localStorage.setItem('transfer.self',JSON.stringify(selfDevice));
@@ -650,21 +660,42 @@ function attachConnection(conn,{pairing=false,pin='',incoming=false}={}){
     if(wasCurrent)connections.delete(remoteId);
     if(pendingPair.get(remoteId)===conn)pendingPair.delete(remoteId);
     clearInboundPair(remoteId,conn);
-    if(wasCurrent)markOnline(remoteId,false);
+    if(wasCurrent){
+      markOnline(remoteId,false);
+      connectAttemptAt.delete(remoteId);
+      setTimeout(()=>{
+        const d=findDevice(remoteId);
+        if(d && peerReady && !(connections.get(remoteId)?.open))connectDevice(d,{force:true});
+      },350);
+    }
   });
   conn.on('error',()=>{
     const wasCurrent=connections.get(remoteId)===conn;
     if(wasCurrent)connections.delete(remoteId);
     if(pendingPair.get(remoteId)===conn)pendingPair.delete(remoteId);
     clearInboundPair(remoteId,conn);
-    if(wasCurrent)markOnline(remoteId,false);
+    if(wasCurrent){
+      markOnline(remoteId,false);
+      connectAttemptAt.delete(remoteId);
+      setTimeout(()=>{
+        const d=findDevice(remoteId);
+        if(d && peerReady && !(connections.get(remoteId)?.open))connectDevice(d,{force:true});
+      },500);
+    }
   });
 }
-function authenticate(conn,device){connections.set(conn.peer,conn);upsertDevice(device,null,true);updateNetworkBadge()}
+function authenticate(conn,device){
+  connections.set(conn.peer,conn);
+  connectAttemptAt.delete(conn.peer);
+  peerLastAliveAt.set(conn.peer,Date.now());
+  upsertDevice(device,null,true);
+  updateNetworkBadge();
+}
 function handleMessage(conn,msg){
   if(!msg || typeof msg!=='object')return;
   const remoteId=conn.peer;
   if(msg.protocol && msg.protocol!==APP_PROTOCOL){conn.send({type:'error',message:'Versión de protocolo incompatible'});return}
+  if(findDevice(remoteId))peerLastAliveAt.set(remoteId,Date.now());
 
   if(msg.type==='pair-request'){
     const staged=inboundPair.get(remoteId);
@@ -902,15 +933,42 @@ function handleMessage(conn,msg){
     const pending=pendingAcks.get(msg.id);if(pending){pending.ok.add(remoteId);if(pending.ok.size>=pending.expected){pendingAcks.delete(msg.id)}}return;
   }
   if(msg.type==='ping'){conn.send({type:'pong',t:msg.t,protocol:APP_PROTOCOL});return}
-  if(msg.type==='pong'){markOnline(remoteId,true);return}
+  if(msg.type==='pong'){peerLastAliveAt.set(remoteId,Date.now());markOnline(remoteId,true);return}
 }
 
-function connectDevice(d){
+function connectDevice(d,{force=false}={}){
   if(!peerReady || !peer || !d?.peerId || d.peerId===selfDevice.peerId)return;
-  const current=connections.get(d.peerId);if(current?.open){markOnline(d.peerId,true);return}
-  try{const conn=peer.connect(d.peerId,{reliable:true,metadata:{app:'TRANSFER',protocol:APP_PROTOCOL}});attachConnection(conn)}catch{}
+
+  const current=connections.get(d.peerId);
+  if(current?.open){
+    markOnline(d.peerId,true);
+    return;
+  }
+
+  const now=Date.now();
+  const last=connectAttemptAt.get(d.peerId)||0;
+  if(!force && now-last<1800)return;
+  connectAttemptAt.set(d.peerId,now);
+
+  if(current){
+    try{current.close()}catch{}
+    connections.delete(d.peerId);
+  }
+
+  try{
+    const conn=peer.connect(d.peerId,{
+      reliable:true,
+      metadata:{app:'TRANSFER',protocol:APP_PROTOCOL}
+    });
+    attachConnection(conn);
+  }catch{
+    connectAttemptAt.delete(d.peerId);
+  }
 }
-function reconnectAll(){if(!peerReady)return;devices.forEach(connectDevice)}
+function reconnectAll({force=false}={}){
+  if(!peerReady)return;
+  devices.forEach(d=>connectDevice(d,{force}));
+}
 
 let lastAndroidResumeRepair=0;
 let androidResumeRetryTimer=null;
@@ -947,23 +1005,191 @@ function restoreAndroidConnectionsAfterResume(){
   androidResumeRetryTimer=setTimeout(retry,1600);
 }
 
+function clearPeerRestartTimer(){
+  if(peerRestartTimer){
+    clearTimeout(peerRestartTimer);
+    peerRestartTimer=null;
+  }
+}
+
+function closeAuthenticatedConnections(){
+  for(const [remoteId,conn] of connections){
+    try{conn.close()}catch{}
+    connections.delete(remoteId);
+    const d=findDevice(remoteId);
+    if(d)d.online=false;
+  }
+  connectAttemptAt.clear();
+  renderDevices();
+}
+
+function restartPeerSameId(delay=250){
+  clearPeerRestartTimer();
+
+  if(document.visibilityState==='hidden'){
+    peerRestartTimer=setTimeout(()=>restartPeerSameId(250),1200);
+    return;
+  }
+
+  const old=peer;
+  peer=null;
+  peerReady=false;
+  updateNetworkBadge();
+  closeAuthenticatedConnections();
+
+  if(old){
+    try{old.destroy()}catch{}
+  }
+
+  peerRestartTimer=setTimeout(()=>{
+    peerRestartTimer=null;
+    initPeer();
+  },delay);
+}
+
+function schedulePeerRestart(delay=1000){
+  if(peerRestartTimer)return;
+  peerRestartTimer=setTimeout(()=>{
+    peerRestartTimer=null;
+    restartPeerSameId(250);
+  },delay);
+}
+
+function ensurePeerAlive({forceRestart=false}={}){
+  if(document.visibilityState==='hidden')return;
+
+  if(forceRestart){
+    restartPeerSameId(250);
+    return;
+  }
+
+  if(!peer || peer.destroyed){
+    initPeer();
+    return;
+  }
+
+  if(peer.open){
+    peerReady=true;
+    reconnectAll();
+    return;
+  }
+
+  if(peer.disconnected){
+    try{peer.reconnect()}catch{}
+    schedulePeerRestart(1400);
+    return;
+  }
+
+  if(peerStartedAt && Date.now()-peerStartedAt>6000){
+    schedulePeerRestart(200);
+  }
+}
+
 function initPeer(){
   updateNetworkBadge();
-  if(typeof Peer==='undefined'){networkError='No se pudo cargar PeerJS';updateNetworkBadge();console.error(networkError);return}
+
+  if(typeof Peer==='undefined'){
+    networkError='No se pudo cargar PeerJS';
+    updateNetworkBadge();
+    console.error(networkError);
+    schedulePeerRestart(1500);
+    return;
+  }
+
+  if(peer && !peer.destroyed){
+    if(peer.open){
+      peerReady=true;
+      reconnectAll();
+      return;
+    }
+    if(peer.disconnected){
+      try{peer.reconnect()}catch{}
+      schedulePeerRestart(1400);
+      return;
+    }
+  }
+
+  clearPeerRestartTimer();
+  peerStartedAt=Date.now();
+  const generation=++peerGeneration;
+
   try{
-    peer=new Peer(selfDevice.peerId,{debug:0});
-    peer.on('open',id=>{peerReady=true;networkError='';selfDevice.peerId=id;save();renderPairDialog();updateNetworkBadge();reconnectAll()});
-    peer.on('connection',conn=>attachConnection(conn,{incoming:true}));
-    peer.on('disconnected',()=>{peerReady=false;updateNetworkBadge();try{peer.reconnect()}catch{}});
-    peer.on('close',()=>{peerReady=false;updateNetworkBadge()});
-    peer.on('error',err=>{
-      console.warn('TRANSFER P2P',err);
-      if(err?.type==='unavailable-id'){
-        selfDevice.peerId=PEER_ID_PREFIX+randomChars(12);save();try{peer.destroy()}catch{};peer=null;setTimeout(initPeer,300);return;
-      }
-      networkError=err?.type||'error';updateNetworkBadge();
+    const p=new Peer(selfDevice.peerId,{debug:0});
+    peer=p;
+
+    p.on('open',id=>{
+      if(peer!==p || generation!==peerGeneration)return;
+
+      peerReady=true;
+      networkError='';
+      selfDevice.peerId=id;
+      save();
+      renderPairDialog();
+      updateNetworkBadge();
+
+      reconnectAll({force:true});
+      setTimeout(()=>reconnectAll({force:true}),450);
+      setTimeout(()=>reconnectAll({force:true}),1300);
     });
-  }catch(err){networkError=String(err);updateNetworkBadge()}
+
+    p.on('connection',conn=>{
+      if(peer!==p || generation!==peerGeneration){
+        try{conn.close()}catch{}
+        return;
+      }
+      attachConnection(conn,{incoming:true});
+    });
+
+    p.on('disconnected',()=>{
+      if(peer!==p || generation!==peerGeneration)return;
+      peerReady=false;
+      updateNetworkBadge();
+      try{p.reconnect()}catch{}
+      schedulePeerRestart(1400);
+    });
+
+    p.on('close',()=>{
+      if(peer!==p || generation!==peerGeneration)return;
+      peerReady=false;
+      peer=null;
+      updateNetworkBadge();
+      schedulePeerRestart(650);
+    });
+
+    p.on('error',err=>{
+      if(peer!==p || generation!==peerGeneration)return;
+
+      console.warn('TRANSFER P2P',err);
+      networkError=err?.type||'error';
+      updateNetworkBadge();
+
+      if(err?.type==='unavailable-id'){
+        // IMPORTANTE: NO crear otro peerId.
+        // Una sesión anterior de iOS/macOS puede retener el ID unos segundos.
+        peerReady=false;
+        try{p.destroy()}catch{}
+        if(peer===p)peer=null;
+        schedulePeerRestart(1200);
+        return;
+      }
+
+      if(
+        err?.type==='network' ||
+        err?.type==='server-error' ||
+        err?.type==='socket-error' ||
+        err?.type==='socket-closed'
+      ){
+        peerReady=false;
+        schedulePeerRestart(1000);
+      }
+    });
+  }catch(err){
+    networkError=String(err);
+    peerReady=false;
+    peer=null;
+    updateNetworkBadge();
+    schedulePeerRestart(1200);
+  }
 }
 
 
@@ -1580,33 +1806,107 @@ const installBtn=$('#installBtn');
 if(installBtn)installBtn.onclick=async()=>{if(deferredPrompt){deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null}else toast('Usa “Añadir a pantalla de inicio” del navegador')};
 
 document.addEventListener('visibilitychange',()=>{
-  if(document.visibilityState!=='visible')return;
+  if(document.visibilityState==='hidden'){
+    lastHiddenAt=Date.now();
+    return;
+  }
+
+  const platform=detectPlatform();
+  const hiddenFor=lastHiddenAt?Date.now()-lastHiddenAt:0;
+
+  if(platform==='android'){
+    restoreAndroidConnectionsAfterResume();
+    ensurePeerAlive();
+    return;
+  }
+
+  // iPhone/iPad: WebRTC puede quedar congelado después de suspensión.
+  // Si estuvo más de 1.2 s fuera, se crea un Peer nuevo con EL MISMO peerId.
+  if(platform==='ios' && hiddenFor>1200){
+    ensurePeerAlive({forceRestart:true});
+    return;
+  }
+
+  ensurePeerAlive();
+  if(peerReady)reconnectAll({force:true});
+});
+
+window.addEventListener('focus',()=>{
   if(detectPlatform()==='android'){
     restoreAndroidConnectionsAfterResume();
     return;
   }
-  if(peer && peer.disconnected){try{peer.reconnect()}catch{}}
-  reconnectAll();
+  ensurePeerAlive();
+  if(peerReady)reconnectAll({force:true});
 });
 
-window.addEventListener('focus',()=>{
-  if(detectPlatform()==='android')restoreAndroidConnectionsAfterResume();
-});
+window.addEventListener('pageshow',e=>{
+  if(detectPlatform()==='android'){
+    restoreAndroidConnectionsAfterResume();
+    return;
+  }
 
-window.addEventListener('pageshow',()=>{
-  if(detectPlatform()==='android')restoreAndroidConnectionsAfterResume();
+  if(detectPlatform()==='ios' && e.persisted){
+    ensurePeerAlive({forceRestart:true});
+    return;
+  }
+
+  ensurePeerAlive();
+  if(peerReady)reconnectAll({force:true});
 });
 
 window.addEventListener('online',()=>{
   networkError='';
-  if(peer?.disconnected){try{peer.reconnect()}catch{}}
+  ensurePeerAlive();
   if(detectPlatform()==='android')restoreAndroidConnectionsAfterResume();
-  else reconnectAll();
+  setTimeout(()=>{if(peerReady)reconnectAll({force:true})},300);
 });
-window.addEventListener('offline',()=>{devices.forEach(d=>d.online=false);renderDevices();setNetworkBadge('error','Sin Internet')});
+
+window.addEventListener('offline',()=>{
+  peerReady=false;
+  devices.forEach(d=>d.online=false);
+  renderDevices();
+  setNetworkBadge('error','Sin Internet');
+});
+
+// Supervisor continuo: también repara cuando peerReady=false.
 setInterval(()=>{
+  if(document.visibilityState==='hidden')return;
+
+  ensurePeerAlive();
   if(!peerReady)return;
-  devices.forEach(d=>{const c=connections.get(d.peerId);if(c?.open){try{c.send({type:'ping',protocol:APP_PROTOCOL,t:Date.now()})}catch{markOnline(d.peerId,false)}}else connectDevice(d)});
+
+  const now=Date.now();
+
+  devices.forEach(d=>{
+    const c=connections.get(d.peerId);
+
+    if(c?.open){
+      const alive=peerLastAliveAt.get(d.peerId)||d.lastSeen||now;
+
+      if(now-alive>10000){
+        try{c.close()}catch{}
+        connections.delete(d.peerId);
+        connectAttemptAt.delete(d.peerId);
+        markOnline(d.peerId,false);
+        setTimeout(()=>connectDevice(d,{force:true}),250);
+        return;
+      }
+
+      try{
+        c.send({type:'ping',protocol:APP_PROTOCOL,t:now});
+      }catch{
+        try{c.close()}catch{}
+        connections.delete(d.peerId);
+        connectAttemptAt.delete(d.peerId);
+        markOnline(d.peerId,false);
+        setTimeout(()=>connectDevice(d,{force:true}),250);
+      }
+      return;
+    }
+
+    connectDevice(d);
+  });
 },RECONNECT_MS);
 
 render();
