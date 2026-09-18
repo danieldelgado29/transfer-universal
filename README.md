@@ -256,3 +256,12 @@ TRANSFER ya puede enviar archivos reales entre dispositivos vinculados.
 - En Android/iPhone muestra Archivo recibido con Abrir y Guardar / compartir.
 - No sube los archivos a GitHub ni a Firebase.
 - No modifica el flujo de texto, QR, tokens o emparejamiento.
+
+
+## V3.10.1 - Puente nativo Android para archivos
+
+Cuando TRANSFER corre dentro de la app Android nativa V1.4:
+- Abrir envía el archivo recibido al sistema Android por bloques y abre la app compatible.
+- Guardar / compartir envía el archivo al sistema y muestra opciones nativas.
+- La transferencia WebView -> Android se hace en bloques de 128 KB para evitar una cadena Base64 enorme.
+- En navegador normal mantiene el fallback web anterior.

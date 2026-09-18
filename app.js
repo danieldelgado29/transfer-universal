@@ -7,7 +7,7 @@ const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
 const FILE_CHUNK_SIZE = 64 * 1024;
 const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB en esta primera versión P2P.
-const APP_VERSION = '3.10.0';
+const APP_VERSION = '3.10.1';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -95,6 +95,71 @@ function setFileSendStatus(text,progress=null){
     else{bar.classList.remove('hidden');bar.value=Math.max(0,Math.min(100,progress))}
   }
 }
+
+function androidNativeFileBridgeAvailable(){
+  try{
+    return detectPlatform()==='android'
+      && typeof window.TRANSFERAndroid!=='undefined'
+      && typeof window.TRANSFERAndroid.beginReceivedFile==='function'
+      && typeof window.TRANSFERAndroid.appendReceivedFileChunk==='function'
+      && typeof window.TRANSFERAndroid.finishReceivedFile==='function';
+  }catch{return false}
+}
+function arrayBufferToBase64(buffer){
+  const bytes=new Uint8Array(buffer);
+  let binary='';
+  const step=0x8000;
+  for(let i=0;i<bytes.length;i+=step){
+    binary+=String.fromCharCode(...bytes.subarray(i,Math.min(bytes.length,i+step)));
+  }
+  return btoa(binary);
+}
+async function sendReceivedFileToAndroidNative(id,action){
+  if(!androidNativeFileBridgeAvailable())return false;
+  const item=receivedFiles.get(id);
+  if(!item)return false;
+
+  const nativeId=`${id}-${Date.now()}-${randomChars(5)}`;
+  const name=safeFileName(item.name);
+  const mime=String(item.mime||'application/octet-stream');
+  const blob=item.file instanceof Blob?item.file:new Blob([item.file],{type:mime});
+
+  try{
+    const begun=window.TRANSFERAndroid.beginReceivedFile(
+      nativeId,
+      name,
+      mime,
+      String(blob.size)
+    );
+    if(!begun)throw new Error('Android no pudo preparar el archivo');
+
+    const chunkSize=128*1024;
+    let sent=0;
+    for(let offset=0;offset<blob.size;offset+=chunkSize){
+      const part=blob.slice(offset,Math.min(blob.size,offset+chunkSize));
+      const buffer=await part.arrayBuffer();
+      const ok=window.TRANSFERAndroid.appendReceivedFileChunk(
+        nativeId,
+        arrayBufferToBase64(buffer)
+      );
+      if(!ok)throw new Error('Android no pudo recibir un bloque del archivo');
+      sent+=part.size;
+      const pct=Math.min(100,Math.round((sent/blob.size)*100));
+      toast(`Preparando ${name}… ${pct}%`);
+      if((offset/chunkSize)%8===7)await new Promise(resolve=>setTimeout(resolve,0));
+    }
+
+    const finished=window.TRANSFERAndroid.finishReceivedFile(nativeId,action);
+    if(!finished)throw new Error('Android no pudo finalizar el archivo');
+    return true;
+  }catch(err){
+    try{window.TRANSFERAndroid.cancelReceivedFile?.(nativeId)}catch{}
+    console.warn('TRANSFER native file bridge',err);
+    toast(err?.message||'No se pudo preparar el archivo en Android');
+    return false;
+  }
+}
+
 function pruneReceivedFiles(){
   const entries=[...receivedFiles.entries()];
   while(entries.length>8){
@@ -128,6 +193,9 @@ function downloadReceivedFile(id){
 async function saveOrShareReceivedFile(id){
   const item=receivedFiles.get(id);
   if(!item)return toast('Ese archivo ya no está disponible');
+
+  if(await sendReceivedFileToAndroidNative(id,'menu'))return;
+
   try{
     if(item.file instanceof File && navigator.canShare?.({files:[item.file]}) && navigator.share){
       await navigator.share({files:[item.file],title:item.name});
@@ -1401,10 +1469,13 @@ $('#receivedFileSaveBtn')?.addEventListener('click',()=>{
   const id=$('#receivedFileDialog')?.dataset.fileId;
   if(id)void saveOrShareReceivedFile(id);
 });
-$('#receivedFileOpenBtn')?.addEventListener('click',()=>{
+$('#receivedFileOpenBtn')?.addEventListener('click',async()=>{
   const id=$('#receivedFileDialog')?.dataset.fileId;
   const item=id?receivedFiles.get(id):null;
   if(!item)return;
+
+  if(await sendReceivedFileToAndroidNative(id,'open'))return;
+
   try{window.open(item.url,'_blank','noopener')}catch{downloadReceivedFile(id)}
 });
 
