@@ -129,7 +129,7 @@
 
   <dialog id="sendDialog" class="sheet">
     <form method="dialog" class="sheet-inner" id="sendForm">
-      <div class="sheet-head"><div><h2>Enviar a…</h2><p>Selecciona uno o varios dispositivos</p></div><button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button></div>
+      <div class="sheet-head"><div><h2>Enviar a…</h2><p>Toca el dispositivo y se envía inmediatamente</p></div><button type="button" class="icon-btn" data-close-dialog aria-label="Cerrar ventana">×</button></div>
       <div class="segmented"><button type="button" class="segment active" data-kind="text">Texto</button><button type="button" class="segment" data-kind="file">Archivo</button></div>
       <label class="content-card" id="textAreaWrap"><span>Contenido</span><textarea id="sendText" rows="3" placeholder="Escribe o pega texto aquí"></textarea></label>
       <label class="content-card hidden file-picker-card" id="fileAreaWrap">
@@ -140,9 +140,7 @@
         <small id="fileSendStatus"></small>
       </label>
       <h3 class="subheading">Dispositivos disponibles</h3>
-      <div id="sendDeviceList" class="select-list"></div>
-      <label class="toggle-row"><div><strong>Enviar a todos</strong><small>Selecciona todos los equipos disponibles</small></div><input type="checkbox" id="selectAll" /></label>
-      <button type="submit" value="default" class="primary-btn wide" id="sendNowBtn">➤ Enviar ahora</button>
+      <div id="sendDeviceList" class="select-list send-device-list"></div>
     </form>
   </dialog>
 
@@ -171,7 +169,7 @@
         <label class="appearance-row"><span class="appearance-icon">☀</span><span><strong>Claro</strong><small>Interfaz clara</small></span><input type="radio" name="theme" value="light"></label>
         <label class="appearance-row"><span class="appearance-icon">☾</span><span><strong>Oscuro</strong><small>Interfaz oscura</small></span><input type="radio" name="theme" value="dark"></label>
       </div>
-      <p class="app-version-note">TRANSFER 3.10.1</p>
+      <p class="app-version-note">TRANSFER 3.10.2</p>
     </form>
   </dialog>
 

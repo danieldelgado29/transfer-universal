@@ -265,3 +265,14 @@ Cuando TRANSFER corre dentro de la app Android nativa V1.4:
 - Guardar / compartir envía el archivo al sistema y muestra opciones nativas.
 - La transferencia WebView -> Android se hace en bloques de 128 KB para evitar una cadena Base64 enorme.
 - En navegador normal mantiene el fallback web anterior.
+
+
+## V3.10.2 - Envío directo por dispositivo
+
+En la ventana Enviar:
+- se eliminan los checkboxes;
+- se elimina Enviar a todos;
+- se elimina el botón Enviar ahora;
+- cada dispositivo conectado es un botón;
+- tocar el dispositivo envía inmediatamente el texto o archivo seleccionado;
+- los dispositivos desconectados siguen visibles pero deshabilitados.

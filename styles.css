@@ -160,3 +160,28 @@ body[data-platform="windows"]{font-family:"Segoe UI",Arial,sans-serif}body[data-
 @media(max-width:540px){
   .received-file-actions{grid-template-columns:1fr}
 }
+
+
+/* V3.10.2 — envío directo al tocar un dispositivo */
+.send-device-button{
+  width:100%;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:14px;
+  border:0;
+  border-bottom:1px solid var(--line);
+  background:transparent;
+  color:var(--text);
+  text-align:left;
+  appearance:none;
+  -webkit-appearance:none;
+}
+.send-device-button:last-child{border-bottom:0}
+.send-device-button:not(:disabled):hover{background:var(--panel2)}
+.send-device-button:not(:disabled):active{background:color-mix(in srgb,var(--blue) 10%,var(--panel))}
+.send-device-button:disabled{opacity:.5;cursor:default}
+.send-device-button .device-icon{width:46px;height:46px;border-radius:15px}
+.send-device-button .device-main{flex:1;min-width:0}
+.send-device-button .device-main strong{display:block;font-size:16px}
+.send-device-arrow{font-size:30px;line-height:1;color:var(--blue);font-weight:400}

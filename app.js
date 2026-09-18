@@ -7,7 +7,7 @@ const RECONNECT_MS = 12000;
 const MAX_RECENTS = 32;
 const FILE_CHUNK_SIZE = 64 * 1024;
 const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB en esta primera versión P2P.
-const APP_VERSION = '3.10.1';
+const APP_VERSION = '3.10.2';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -425,7 +425,7 @@ function renderDevices(){
   const desktop=$('#desktopDeviceList');if(desktop)desktop.innerHTML=deviceRows(false);
   const online=devices.filter(d=>d.online).length;if($('#onlineCount'))$('#onlineCount').textContent=online;
   const send=$('#sendDeviceList');
-  if(send)send.innerHTML=devices.length?devices.map(d=>`<label class="select-device ${d.online?'':'is-offline'}"><input type="checkbox" value="${escapeHtml(d.peerId)}" ${d.online?'':'disabled'}><div class="device-icon real-device-icon">${deviceGlyph(d)}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Conectado':'Desconectado'}</div></div></label>`).join(''):`<div class="empty-state"><strong>Primero vincula otro equipo</strong><small>Ambos dispositivos deben tener TRANSFER abierto durante la primera vinculación.</small></div>`;
+  if(send)send.innerHTML=devices.length?devices.map(d=>`<button type="button" class="send-device-button ${d.online?'':'is-offline'}" data-send-dialog-peer="${escapeHtml(d.peerId)}" ${d.online?'':'disabled'}><div class="device-icon real-device-icon">${deviceGlyph(d)}</div><div class="device-main"><strong>${escapeHtml(deviceLabel(d))}</strong><div class="status-line"><span class="dot ${d.online?'':'off'}"></span>${d.online?'Tocar para enviar':'Desconectado'}</div></div><span class="send-device-arrow">›</span></button>`).join(''):`<div class="empty-state"><strong>Primero vincula otro equipo</strong><small>Ambos dispositivos deben tener TRANSFER abierto durante la primera vinculación.</small></div>`;
   updateNetworkBadge();
 }
 let mobileRecentsExpanded=false;
@@ -1173,7 +1173,6 @@ function openSend(prefillFile=null){
 }
 $$('[data-open-send]').forEach(b=>b.onclick=()=>openSend());
 $$('.segment').forEach(btn=>btn.onclick=()=>{$$('.segment').forEach(x=>x.classList.toggle('active',x===btn));const file=btn.dataset.kind==='file';$('#fileAreaWrap').classList.toggle('hidden',!file);$('#textAreaWrap').classList.toggle('hidden',file)});
-$('#selectAll').onchange=e=>$$('#sendDeviceList input:not(:disabled)').forEach(c=>c.checked=e.target.checked);
 $('#fileInput')?.addEventListener('change',e=>{
   const file=e.target.files?.[0];
   const info=$('#fileSelectedInfo');
@@ -1182,28 +1181,80 @@ $('#fileInput')?.addEventListener('change',e=>{
 });
 
 
-$('#sendForm').addEventListener('submit',e=>{
-  e.preventDefault();
-  const selectedPeers=$$('#sendDeviceList input:checked').map(c=>c.value);
-  if(!selectedPeers.length){toast('Selecciona al menos un dispositivo conectado');return}
-  const isFile=$('.segment.active').dataset.kind==='file';
-  if(isFile){
-    const file=$('#fileInput')?.files?.[0];
-    if(!file){toast('Selecciona un archivo');return}
-    $('#sendDialog').close();
-    void sendFileToPeers(file,selectedPeers);
+async function sendDialogToPeer(peerId){
+  const d=findDevice(peerId);
+  if(!d)return;
+  if(!d.online){
+    toast(`${deviceLabel(d)} está desconectado`);
     return;
   }
-  const text=$('#sendText').value.trim();if(!text){toast('Escribe o pega un texto');return}
+
+  const conn=connections.get(peerId);
+  if(!conn?.open){
+    toast(`${deviceLabel(d)} ya no está conectado`);
+    markOnline(peerId,false);
+    return;
+  }
+
+  const isFile=$('.segment.active')?.dataset.kind==='file';
+
+  if(isFile){
+    const file=$('#fileInput')?.files?.[0];
+    if(!file){
+      toast('Selecciona primero un archivo');
+      return;
+    }
+    $('#sendDialog').close();
+    await sendFileToPeers(file,[peerId]);
+    return;
+  }
+
+  const text=String($('#sendText')?.value||'').trim();
+  if(!text){
+    toast('Escribe o pega un texto');
+    return;
+  }
+
   const msgId=crypto.randomUUID?.()||`${Date.now()}-${randomChars(6)}`;
-  let sent=0;
-  selectedPeers.forEach(peerId=>{const conn=connections.get(peerId);if(conn?.open){conn.send({type:'text',protocol:APP_PROTOCOL,id:msgId,text,sentAt:Date.now(),device:selfInfo()});sent++}});
-  if(!sent){toast('Los dispositivos ya no están conectados');renderDevices();return}
-  clipboardText=text;save();updateClipboardUI();
-  const names=selectedPeers.map(id=>{const d=findDevice(id);return d?deviceLabel(d):id});
-  addRecent(text.length>48?text.slice(0,48)+'…':text,`Enviado a ${names.join(', ')} · ${nowLabel()}`,'≡',msgId);
-  pendingAcks.set(msgId,{expected:sent,ok:new Set(),at:Date.now()});
-  $('#sendDialog').close();toast(`Texto enviado a ${sent} dispositivo${sent===1?'':'s'} ✓`);
+
+  try{
+    conn.send({
+      type:'text',
+      protocol:APP_PROTOCOL,
+      id:msgId,
+      text,
+      sentAt:Date.now(),
+      device:selfInfo()
+    });
+
+    clipboardText=text;
+    save();
+    updateClipboardUI();
+    pendingAcks.set(msgId,{expected:1,ok:new Set(),at:Date.now()});
+    addRecent(
+      text.length>48?text.slice(0,48)+'…':text,
+      `Enviado a ${deviceLabel(d)} · ${nowLabel()}`,
+      '≡',
+      msgId
+    );
+
+    $('#sendDialog').close();
+    toast(`Enviado a ${deviceLabel(d)} ✓`);
+  }catch{
+    toast('No se pudo enviar');
+    markOnline(peerId,false);
+  }
+}
+
+$('#sendDeviceList')?.addEventListener('click',e=>{
+  const button=e.target.closest('[data-send-dialog-peer]');
+  if(!button || button.disabled)return;
+  void sendDialogToPeer(button.dataset.sendDialogPeer);
+});
+
+$('#sendForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  toast('Toca el dispositivo al que quieres enviar');
 });
 
 const copyBtn=$('#copyBtn');if(copyBtn)copyBtn.onclick=async()=>{const text=clipboardText||$('#clipboardPreview')?.textContent||'';if(!text)return toast('No hay texto para copiar');if(detectPlatform()==='android'&&androidNativeBridgeAvailable()){writeAndroidNativeClipboard(text);toast('Listo para pegar en Android');return}try{await navigator.clipboard.writeText(text);toast('Copiado al portapapeles')}catch{toast('El navegador no permitió copiar')}};
