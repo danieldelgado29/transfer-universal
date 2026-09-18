@@ -288,3 +288,15 @@ En la ventana Enviar:
 - Las DataConnection caídas se reintentan inmediatamente.
 - Ping/pong detecta conexiones aparentemente abiertas pero muertas.
 - Se conservan vínculos, tokens, archivos y envío directo V3.10.2.
+
+
+## V3.10.4 - Multiarchivos, Finder y estado P2P
+
+- El selector y drag & drop admiten varios archivos.
+- Los archivos se mandan secuencialmente como un lote al dispositivo tocado.
+- En móvil, varios archivos recibidos quedan en cola y no se pisan entre sí.
+- En Mac, TRANSFER Mac Bridge V1.2 guarda recibidos en `~/Downloads/TRANSFER Received`.
+- Finder se abre automáticamente y revela/selecciona el archivo recibido.
+- En lotes, el Bridge intenta seleccionar todos los archivos del lote.
+- `peer-unavailable` y `webrtc` ya no pintan toda la red P2P de rojo.
+- Los errores reales de señalización muestran su tipo entre paréntesis.

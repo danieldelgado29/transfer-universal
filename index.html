@@ -51,8 +51,8 @@
                 <span class="upload-cloud">☁</span>
                 <strong>Arrastra archivos aquí</strong>
                 <small>o haz clic para seleccionar</small>
-                <button class="soft-btn" id="desktopFileBtn">Seleccionar archivo</button>
-                <input type="file" id="desktopFileInput" hidden />
+                <button class="soft-btn" id="desktopFileBtn">Seleccionar archivos</button>
+                <input type="file" id="desktopFileInput" multiple hidden />
               </div>
               <small class="supported">Fotos, PDF, ZIP, audio, video y más</small>
             </article>
@@ -133,8 +133,8 @@
       <div class="segmented"><button type="button" class="segment active" data-kind="text">Texto</button><button type="button" class="segment" data-kind="file">Archivo</button></div>
       <label class="content-card" id="textAreaWrap"><span>Contenido</span><textarea id="sendText" rows="3" placeholder="Escribe o pega texto aquí"></textarea></label>
       <label class="content-card hidden file-picker-card" id="fileAreaWrap">
-        <span>Archivo</span>
-        <input type="file" id="fileInput" />
+        <span>Archivo(s)</span>
+        <input type="file" id="fileInput" multiple />
         <small id="fileSelectedInfo">Ningún archivo seleccionado</small>
         <progress id="fileSendProgress" class="file-progress hidden" max="100" value="0"></progress>
         <small id="fileSendStatus"></small>
@@ -169,7 +169,7 @@
         <label class="appearance-row"><span class="appearance-icon">☀</span><span><strong>Claro</strong><small>Interfaz clara</small></span><input type="radio" name="theme" value="light"></label>
         <label class="appearance-row"><span class="appearance-icon">☾</span><span><strong>Oscuro</strong><small>Interfaz oscura</small></span><input type="radio" name="theme" value="dark"></label>
       </div>
-      <p class="app-version-note">TRANSFER 3.10.2</p>
+      <p class="app-version-note">TRANSFER 3.10.4</p>
     </form>
   </dialog>
 

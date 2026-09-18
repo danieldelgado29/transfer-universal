@@ -7,7 +7,7 @@ const RECONNECT_MS = 2500;
 const MAX_RECENTS = 32;
 const FILE_CHUNK_SIZE = 64 * 1024;
 const MAX_FILE_BYTES = 100 * 1024 * 1024; // 100 MB en esta primera versión P2P.
-const APP_VERSION = '3.10.3';
+const APP_VERSION = '3.10.4';
 const MAC_BRIDGE_URLS = ['https://127.0.0.1:8766','http://127.0.0.1:8765'];
 const MAC_BRIDGE_POLL_MS = 700;
 const UPDATE_CHECK_MS = 5 * 60 * 1000;
@@ -60,8 +60,10 @@ const inboundPair = new Map(); // peerId -> sesión de vinculación entrante pen
 const pairingSessions = new Map(); // peerId -> sesión saliente con reintentos automáticos
 const pendingAcks = new Map();
 const incomingFiles = new Map(); // remoteId:fileId -> transferencia entrante
-const receivedFiles = new Map(); // fileId -> {file,url,name,size,mime,sender}
+const receivedFiles = new Map(); // fileId -> {file,url,name,size,mime,sender,batchId,batchIndex,batchTotal}
 const pendingFileAcks = new Map();
+const receivedFileQueue = [];
+let receivedFileDialogBusy = false;
 
 // V3.10.3 — supervisor de conexión.
 // Conserva SIEMPRE el peerId actual. iOS puede dejar una sesión WebRTC vieja
@@ -219,6 +221,84 @@ async function saveOrShareReceivedFile(id){
     try{window.open(item.url,'_blank','noopener')}catch{}
   }
 }
+async function sendReceivedFileToMacBridge(id){
+  if(detectPlatform()!=='mac')return false;
+  const item=receivedFiles.get(id);
+  if(!item)return false;
+
+  const blob=item.file instanceof Blob
+    ? item.file
+    : new Blob([item.file],{type:item.mime||'application/octet-stream'});
+
+  const nativeId=`${id}-${Date.now()}-${randomChars(5)}`;
+  const headers={'Content-Type':'application/json'};
+  const batchId=String(item.batchId||id);
+
+  try{
+    let response=await macBridgeFetch('/file/start',{
+      method:'POST',
+      headers,
+      body:JSON.stringify({
+        id:nativeId,
+        name:safeFileName(item.name),
+        mime:String(item.mime||'application/octet-stream'),
+        size:blob.size,
+        batchId,
+        batchIndex:Number(item.batchIndex||0),
+        batchTotal:Number(item.batchTotal||1)
+      })
+    });
+    if(!response.ok)throw new Error(`start ${response.status}`);
+
+    const chunkSize=256*1024;
+    for(let offset=0;offset<blob.size;offset+=chunkSize){
+      const part=blob.slice(offset,Math.min(blob.size,offset+chunkSize));
+      const data=arrayBufferToBase64(await part.arrayBuffer());
+      response=await macBridgeFetch('/file/chunk',{
+        method:'POST',
+        headers,
+        body:JSON.stringify({id:nativeId,data})
+      });
+      if(!response.ok)throw new Error(`chunk ${response.status}`);
+    }
+
+    response=await macBridgeFetch('/file/finish',{
+      method:'POST',
+      headers,
+      body:JSON.stringify({id:nativeId})
+    });
+    if(!response.ok)throw new Error(`finish ${response.status}`);
+    return true;
+  }catch(err){
+    try{
+      await macBridgeFetch('/file/cancel',{
+        method:'POST',
+        headers,
+        body:JSON.stringify({id:nativeId})
+      });
+    }catch{}
+    console.warn('TRANSFER Mac file bridge',err);
+    return false;
+  }
+}
+
+function queueReceivedFile(id){
+  if(!id)return;
+  receivedFileQueue.push(id);
+  showNextReceivedFile();
+}
+function showNextReceivedFile(){
+  const dlg=$('#receivedFileDialog');
+  if(!dlg || receivedFileDialogBusy || dlg.open)return;
+  while(receivedFileQueue.length){
+    const id=receivedFileQueue.shift();
+    if(!receivedFiles.has(id))continue;
+    receivedFileDialogBusy=true;
+    showReceivedFile(id);
+    return;
+  }
+}
+
 function arrayBufferFromMessageData(data){
   if(data instanceof ArrayBuffer)return data;
   if(ArrayBuffer.isView(data))return data.buffer.slice(data.byteOffset,data.byteOffset+data.byteLength);
@@ -241,6 +321,9 @@ function receiveFileStart(remoteId,d,msg){
     receivedChunks:0,
     receivedBytes:0,
     sender:deviceLabel(d),
+    batchId:String(msg.batchId||id),
+    batchIndex:Number(msg.batchIndex||0),
+    batchTotal:Math.max(1,Math.min(100,Number(msg.batchTotal)||1)),
     startedAt:Date.now()
   });
   toast(`Recibiendo ${safeFileName(msg.name)}…`);
@@ -258,7 +341,7 @@ function receiveFileChunk(remoteId,msg){
   state.receivedChunks++;
   state.receivedBytes+=buf.byteLength;
 }
-function finishIncomingFile(conn,remoteId,d,msg){
+async function finishIncomingFile(conn,remoteId,d,msg){
   const id=String(msg.id||'');
   const key=fileTransferKey(remoteId,id);
   const state=incomingFiles.get(key);
@@ -269,10 +352,12 @@ function finishIncomingFile(conn,remoteId,d,msg){
     toast(`No se completó ${state.name}`);
     return;
   }
+
   const blob=new Blob(state.chunks,{type:state.mime});
   let file;
   try{file=new File([blob],state.name,{type:state.mime,lastModified:Date.now()})}
   catch{file=blob}
+
   const url=URL.createObjectURL(blob);
   receivedFiles.set(id,{
     id,file,url,
@@ -280,8 +365,12 @@ function finishIncomingFile(conn,remoteId,d,msg){
     size:blob.size,
     mime:state.mime,
     sender:state.sender,
+    batchId:state.batchId||id,
+    batchIndex:state.batchIndex||0,
+    batchTotal:state.batchTotal||1,
     receivedAt:Date.now()
   });
+
   pruneReceivedFiles();
   incomingFiles.delete(key);
 
@@ -289,15 +378,29 @@ function finishIncomingFile(conn,remoteId,d,msg){
   try{conn.send({type:'file-ack',protocol:APP_PROTOCOL,id,name:state.name,size:blob.size})}catch{}
 
   const platform=detectPlatform();
-  if(platform==='mac'||platform==='windows'){
+
+  if(platform==='mac'){
+    const saved=await sendReceivedFileToMacBridge(id);
+    if(saved){
+      toast(`Archivo recibido: ${state.name}`);
+    }else{
+      downloadReceivedFile(id);
+      toast(`Archivo recibido: ${state.name} · descarga del navegador`);
+    }
+    return;
+  }
+
+  if(platform==='windows'){
     downloadReceivedFile(id);
     toast(`Archivo recibido: ${state.name}`);
-  }else{
-    showReceivedFile(id);
-    toast(`Archivo recibido: ${state.name}`);
+    return;
   }
+
+  queueReceivedFile(id);
+  toast(`Archivo recibido: ${state.name}`);
 }
-async function sendFileToPeers(file,peerIds){
+
+async function sendFileToPeers(file,peerIds,batchMeta={}){
   if(!file)return toast('Selecciona un archivo');
   if(file.size>MAX_FILE_BYTES)return toast(`Máximo ${formatBytes(MAX_FILE_BYTES)} por archivo`);
   if(file.size===0)return toast('El archivo está vacío');
@@ -322,6 +425,9 @@ async function sendFileToPeers(file,peerIds){
       type:'file-start',
       protocol:APP_PROTOCOL,
       id,name,size:file.size,mime,totalChunks,
+      batchId:String(batchMeta.batchId||id),
+      batchIndex:Number(batchMeta.batchIndex||0),
+      batchTotal:Number(batchMeta.batchTotal||1),
       sentAt:Date.now(),
       device:selfInfo()
     });
@@ -365,7 +471,7 @@ function setNetworkBadge(state,text){
   ['#desktopNetworkBadge','#mobileNetworkBadge'].forEach(sel=>{const e=$(sel);if(!e)return;e.dataset.state=state;const sp=e.querySelector('span');if(sp)sp.textContent=text});
 }
 function updateNetworkBadge(){
-  if(networkError){setNetworkBadge('error','Sin red P2P');return}
+  if(networkError){setNetworkBadge('error',`Sin red P2P (${networkError})`);return}
   if(!peerReady){setNetworkBadge('connecting','Conectando…');return}
   const n=devices.filter(d=>d.online).length;
   setNetworkBadge(n?'online':'ready',n?`${n} conectado${n===1?'':'s'}`:'P2P listo');
@@ -909,7 +1015,7 @@ function handleMessage(conn,msg){
   }
   if(msg.type==='file-end'){
     const d=findDevice(remoteId);if(!d || connections.get(remoteId)!==conn)return;
-    finishIncomingFile(conn,remoteId,d,msg);
+    void finishIncomingFile(conn,remoteId,d,msg);
     return;
   }
   if(msg.type==='file-ack'){
@@ -1160,10 +1266,18 @@ function initPeer(){
       if(peer!==p || generation!==peerGeneration)return;
 
       console.warn('TRANSFER P2P',err);
-      networkError=err?.type||'error';
+      const type=err?.type||'error';
+
+      if(type==='peer-unavailable' || type==='webrtc'){
+        networkError='';
+        updateNetworkBadge();
+        return;
+      }
+
+      networkError=type;
       updateNetworkBadge();
 
-      if(err?.type==='unavailable-id'){
+      if(type==='unavailable-id'){
         // IMPORTANTE: NO crear otro peerId.
         // Una sesión anterior de iOS/macOS puede retener el ID unos segundos.
         peerReady=false;
@@ -1174,10 +1288,10 @@ function initPeer(){
       }
 
       if(
-        err?.type==='network' ||
-        err?.type==='server-error' ||
-        err?.type==='socket-error' ||
-        err?.type==='socket-closed'
+        type==='network' ||
+        type==='server-error' ||
+        type==='socket-error' ||
+        type==='socket-closed'
       ){
         peerReady=false;
         schedulePeerRestart(1000);
@@ -1392,19 +1506,90 @@ function openSettings(){applyTheme(localStorage.getItem('transfer.theme')==='dar
 $$('input[name="theme"]').forEach(r=>r.onchange=()=>applyTheme(r.value));
 $$('input[name="platform"]').forEach(r=>r.onchange=()=>applyPlatform(r.value));
 
-function openSend(prefillFile=null){
-  if(prefillFile){$('.segment[data-kind="file"]').click();try{const dt=new DataTransfer();dt.items.add(prefillFile);$('#fileInput').files=dt.files}catch{} }
-  else{$('#sendText').value=clipboardText;$('.segment[data-kind="text"]').click()}
-  renderDevices();$('#sendDialog').showModal();
+function fileSelectionSummary(files){
+  const list=[...(files||[])];
+  if(!list.length)return 'Ningún archivo seleccionado';
+  const total=list.reduce((sum,f)=>sum+(Number(f.size)||0),0);
+  if(list.length===1)return `${safeFileName(list[0].name)} · ${formatBytes(total)}`;
+  return `${list.length} archivos · ${formatBytes(total)}`;
 }
+
+function openSend(prefillFiles=null){
+  const list=prefillFiles
+    ? (typeof FileList!=='undefined' && prefillFiles instanceof FileList
+        ? [...prefillFiles]
+        : (Array.isArray(prefillFiles)?prefillFiles:[prefillFiles]))
+    : [];
+
+  if(list.length){
+    $('.segment[data-kind="file"]').click();
+    try{
+      const dt=new DataTransfer();
+      list.forEach(file=>dt.items.add(file));
+      $('#fileInput').files=dt.files;
+      const info=$('#fileSelectedInfo');
+      if(info)info.textContent=fileSelectionSummary(dt.files);
+    }catch{}
+  }else{
+    $('#sendText').value=clipboardText;
+    $('.segment[data-kind="text"]').click();
+  }
+
+  renderDevices();
+  $('#sendDialog').showModal();
+}
+
 $$('[data-open-send]').forEach(b=>b.onclick=()=>openSend());
-$$('.segment').forEach(btn=>btn.onclick=()=>{$$('.segment').forEach(x=>x.classList.toggle('active',x===btn));const file=btn.dataset.kind==='file';$('#fileAreaWrap').classList.toggle('hidden',!file);$('#textAreaWrap').classList.toggle('hidden',file)});
+$$('.segment').forEach(btn=>btn.onclick=()=>{
+  $$('.segment').forEach(x=>x.classList.toggle('active',x===btn));
+  const file=btn.dataset.kind==='file';
+  $('#fileAreaWrap').classList.toggle('hidden',!file);
+  $('#textAreaWrap').classList.toggle('hidden',file);
+});
+
 $('#fileInput')?.addEventListener('change',e=>{
-  const file=e.target.files?.[0];
   const info=$('#fileSelectedInfo');
-  if(info)info.textContent=file?`${safeFileName(file.name)} · ${formatBytes(file.size)}`:'Ningún archivo seleccionado';
+  if(info)info.textContent=fileSelectionSummary(e.target.files);
   setFileSendStatus('',null);
 });
+
+async function sendFilesToPeer(files,peerId){
+  const list=[...(files||[])];
+  if(!list.length){
+    toast('Selecciona primero uno o varios archivos');
+    return;
+  }
+
+  for(const f of list){
+    if(f.size>MAX_FILE_BYTES){
+      toast(`${safeFileName(f.name)} supera ${formatBytes(MAX_FILE_BYTES)}`);
+      return;
+    }
+    if(f.size===0){
+      toast(`${safeFileName(f.name)} está vacío`);
+      return;
+    }
+  }
+
+  const batchId=crypto.randomUUID?.()||`batch-${Date.now()}-${randomChars(6)}`;
+
+  for(let i=0;i<list.length;i++){
+    const file=list[i];
+    setFileSendStatus(
+      list.length>1
+        ? `Archivo ${i+1} de ${list.length}: ${safeFileName(file.name)}`
+        : `Preparando ${safeFileName(file.name)}…`,
+      0
+    );
+    await sendFileToPeers(file,[peerId],{
+      batchId,
+      batchIndex:i,
+      batchTotal:list.length
+    });
+  }
+
+  if(list.length>1)toast(`${list.length} archivos enviados ✓`);
+}
 
 
 async function sendDialogToPeer(peerId){
@@ -1425,13 +1610,13 @@ async function sendDialogToPeer(peerId){
   const isFile=$('.segment.active')?.dataset.kind==='file';
 
   if(isFile){
-    const file=$('#fileInput')?.files?.[0];
-    if(!file){
-      toast('Selecciona primero un archivo');
+    const files=[...($('#fileInput')?.files||[])];
+    if(!files.length){
+      toast('Selecciona primero uno o varios archivos');
       return;
     }
     $('#sendDialog').close();
-    await sendFileToPeers(file,[peerId]);
+    await sendFilesToPeer(files,peerId);
     return;
   }
 
@@ -1756,6 +1941,11 @@ $('#receivedFileOpenBtn')?.addEventListener('click',async()=>{
   try{window.open(item.url,'_blank','noopener')}catch{downloadReceivedFile(id)}
 });
 
+$('#receivedFileDialog')?.addEventListener('close',()=>{
+  receivedFileDialogBusy=false;
+  setTimeout(showNextReceivedFile,80);
+});
+
 // Cierre robusto de todas las ventanas modales. Los botones X nunca envían formularios.
 $$('[data-close-dialog]').forEach(btn=>btn.addEventListener('click',()=>{
   const dialog=btn.closest('dialog');
@@ -1790,11 +1980,11 @@ document.addEventListener('click',e=>{
 });
 
 const desktopFileBtn=$('#desktopFileBtn');if(desktopFileBtn)desktopFileBtn.onclick=()=>$('#desktopFileInput').click();
-$('#desktopFileInput').onchange=e=>{const f=e.target.files[0];if(f)openSend(f)};
+$('#desktopFileInput').onchange=e=>{if(e.target.files?.length)openSend(e.target.files)};
 const dz=$('#dropZone');
 ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.querySelector('.drop-zone').classList.add('dragover')}));
 ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.querySelector('.drop-zone').classList.remove('dragover')}));
-dz.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)openSend(f)});
+dz.addEventListener('drop',e=>{if(e.dataTransfer.files?.length)openSend(e.dataTransfer.files)});
 
 $$('[data-tab]').forEach(b=>b.onclick=()=>{
   const group=b.closest('nav');if(group)group.querySelectorAll('[data-tab]').forEach(x=>x.classList.remove('active'));b.classList.add('active');
